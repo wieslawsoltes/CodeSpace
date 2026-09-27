@@ -29,7 +29,6 @@ async function enterQuickPick(query) {
 async function palette(query) { await clickAction('Search files (Ctrl+P)'); await enterQuickPick(query); }
 async function command(query) { await page.keyboard.press('F1'); await enterQuickPick(query); }
 async function focusEditor() {
-  // Click the visible left editor, then wait for native focus/layout to settle.
   await page.mouse.click(620, 114); await page.waitForTimeout(200);
 }
 try {
@@ -95,7 +94,7 @@ try {
   await check('extension completion inserts into the custom editor and undoes', async () => {
     await focusEditor(); await page.keyboard.press('Control+End');
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
-    // Exercise the registered command independently of browser-reserved Ctrl+Space.
+    // Verify the command path separately from the unresolved split-focus shortcut path.
     await command('Editor: Suggest Completions'); await enterQuickPick('CodeSpaceProviderCompletion');
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].includes('CodeSpaceProviderCompletion'));
     await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, original);
@@ -109,7 +108,9 @@ try {
   });
   await check('extension hover and symbols reach real workbench controls', async () => {
     await command('Editor: Show Hover');
-    await page.getByText('CodeSpace extension hover is connected to the custom Uno editor.', { exact: true }).waitFor({ state: 'attached' });
+    // Skia text is represented by an accessibility label, not a DOM text node.
+    await page.getByLabel('CodeSpace extension hover is connected to the custom Uno editor.', { exact: true }).waitFor({ state: 'attached' });
+    await page.screenshot({ path: output + '/extension-hover.png', fullPage: true });
     await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
     await command('Go to Symbol in Editor');
     await page.getByRole('button', { name: 'Extension symbol', exact: true }).waitFor({ state: 'attached' });
@@ -135,6 +136,7 @@ try {
   if (errors.length) throw new Error('Browser page errors: ' + errors.join('\n'));
 } catch (error) {
   console.error('FAILED WORKFLOW', passed + 1, error.stack);
+  await writeFile(output + '/failure.txt', String(error.stack));
   await page.screenshot({ path: output + '/failure.png', fullPage: true }).catch(() => {});
   await writeFile(output + '/failure.html', await page.content());
   const diagnostics = await page.evaluate(() => ({ url: location.href, state: globalThis.__codespaceTestState, events: globalThis.__codespaceTestEvents, workerAvailable: !!globalThis.CodeSpaceHost, focused: document.activeElement?.outerHTML, inputs: [...document.querySelectorAll('input,textarea')].map(input => ({ id: input.id, value: input.value, bounds: input.getBoundingClientRect().toJSON() })) }));
