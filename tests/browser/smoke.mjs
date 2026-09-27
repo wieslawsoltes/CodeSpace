@@ -51,6 +51,39 @@ try {
     for (let i = 0; i < '// browser smoke'.length; i++) await page.keyboard.press('Control+z');
     await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
   });
+  await check('selection, deletion and redo use the document history', async () => {
+    const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
+    await page.keyboard.press('Control+Home');
+    for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowRight');
+    await page.keyboard.press('Delete');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value.slice(5), original);
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Control+y');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value.slice(5), original);
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Control+a'); await page.keyboard.type('X');
+    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'] === 'X');
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Escape');
+  });
+  await check('multiple matching selections edit and undo atomically', async () => {
+    const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
+    await page.keyboard.press('Control+Home');
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Home'); await page.keyboard.press('Control+ArrowRight');
+    await page.keyboard.press('Control+d'); await page.keyboard.press('Control+d');
+    await page.keyboard.type('T');
+    await page.waitForFunction(() => {
+      const text = __codespaceTestState.files['src/Workbench.cs'];
+      return text.includes('T Theme') && text.includes('public T[] Panels');
+    });
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Escape'); await page.keyboard.press('Control+End');
+  });
   await check('split editor creates a real second group', async () => { await clickAction('Split editor right (Ctrl+\\)'); await page.waitForFunction(() => __codespaceTestState.groups.length === 2); });
   await page.screenshot({ path: output + '/split-editors.png', fullPage: true });
   await check('sidebar toggle is functional', async () => {

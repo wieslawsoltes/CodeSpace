@@ -119,3 +119,34 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify public site and deployed commit
+        env:
+          PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          base = os.environ['PAGES_URL'].rstrip('/') + '/'
+          expected = os.environ['GITHUB_SHA']
+          def read(path):
+              request = urllib.request.Request(base + path + '?verify=' + expected,
+                  headers={'Cache-Control': 'no-cache', 'User-Agent': 'CodeSpace-deployment-verifier'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return response.read().decode('utf-8')
+          for attempt in range(12):
+              try:
+                  info = json.loads(read('build-info.json'))
+                  if info.get('commit') != expected:
+                      raise RuntimeError('Public commit does not yet match: ' + repr(info))
+                  if 'CodeSpace' not in read('index.html'):
+                      raise RuntimeError('Unexpected public application document')
+                  if 'createExtensionHost' not in read('extension-host/worker.mjs'):
+                      raise RuntimeError('Browser extension worker is missing')
+                  print('Verified public application, extension worker, and commit ' + expected)
+                  break
+              except Exception as error:
+                  if attempt == 11:
+                      raise
+                  print('Deployment verification retry: ' + str(error), flush=True)
+                  time.sleep(5)
+          PY
