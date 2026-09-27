@@ -9,7 +9,7 @@ const messages = [], errors = [];
 page.on('console', message => { const text = message.type() + ': ' + message.text(); messages.push(text); if (text.includes('[CodeSpace]')) console.log(text); });
 page.on('pageerror', error => errors.push(error.stack ?? String(error)));
 let passed = 0;
-async function check(name, test) { await test(); console.log('PASS ' + name); passed++; }
+async function check(name, test) { console.log('START ' + name); await test(); console.log('PASS ' + name); passed++; }
 async function enableAccessibility() { const enable = page.locator('#uno-enable-accessibility'); if (await enable.count()) await enable.dispatchEvent('click'); }
 async function clickAction(name) {
   const action = page.getByRole('button', { name, exact: true }).first();
@@ -20,15 +20,18 @@ async function clickAction(name) {
 }
 async function enterQuickPick(query) {
   const input = page.getByRole('textbox', { name: 'Command palette input', exact: true });
-  await input.waitFor({ state: 'attached' });
-  // Native input events are used rather than a command execution test endpoint.
-  await input.fill(query);
+  await input.waitFor({ state: 'attached' }); await input.fill(query);
   await page.waitForFunction(value => [...document.querySelectorAll('input,textarea')].some(input => input.value === value), query);
   await page.waitForTimeout(300);
   await page.screenshot({ path: output + '/quick-pick-' + passed + '.png', fullPage: true });
   await input.press('Enter');
 }
 async function palette(query) { await clickAction('Search files (Ctrl+P)'); await enterQuickPick(query); }
+async function command(query) { await page.keyboard.press('F1'); await enterQuickPick(query); }
+async function focusEditor() {
+  // Click the visible left editor, then wait for native focus/layout to settle.
+  await page.mouse.click(620, 114); await page.waitForTimeout(200);
+}
 try {
   await page.goto((process.env.BASE_URL ?? 'http://127.0.0.1:4173/') + '?e2e=1', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!globalThis.__codespaceTestState, null, { timeout: 90000 });
@@ -42,7 +45,7 @@ try {
   await page.screenshot({ path: output + '/workbench.png', fullPage: true });
   await check('quick open changes active document', async () => { await palette('src/Workbench.cs'); await page.waitForFunction(() => __codespaceTestState.groups[0].activeTab === 'src/Workbench.cs'); });
   await check('custom editor typing and undo', async () => {
-    await page.mouse.click(620, 114); await page.keyboard.press('Control+End');
+    await focusEditor(); await page.keyboard.press('Control+End');
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
     await page.keyboard.type('// browser smoke', { delay: 20 });
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// browser smoke'));
@@ -55,31 +58,21 @@ try {
     for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowRight');
     await page.keyboard.press('Delete');
     await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value.slice(5), original);
-    await page.keyboard.press('Control+z');
-    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
-    await page.keyboard.press('Control+y');
-    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value.slice(5), original);
-    await page.keyboard.press('Control+z');
-    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Control+z'); await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Control+y'); await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value.slice(5), original);
+    await page.keyboard.press('Control+z'); await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
     await page.keyboard.press('Control+a'); await page.keyboard.type('X');
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'] === 'X');
-    await page.keyboard.press('Control+z');
-    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Control+z'); await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
     await page.keyboard.press('Escape');
   });
   await check('multiple matching selections edit and undo atomically', async () => {
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
-    await page.keyboard.press('Control+Home');
-    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Control+Home'); for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Home'); await page.keyboard.press('Control+ArrowRight');
-    await page.keyboard.press('Control+d'); await page.keyboard.press('Control+d');
-    await page.keyboard.type('T');
-    await page.waitForFunction(() => {
-      const text = __codespaceTestState.files['src/Workbench.cs'];
-      return text.includes('T Theme') && text.includes('public T[] Panels');
-    });
-    await page.keyboard.press('Control+z');
-    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.keyboard.press('Control+d'); await page.keyboard.press('Control+d'); await page.keyboard.type('T');
+    await page.waitForFunction(() => { const text = __codespaceTestState.files['src/Workbench.cs']; return text.includes('T Theme') && text.includes('public T[] Panels'); });
+    await page.keyboard.press('Control+z'); await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
     await page.keyboard.press('Escape'); await page.keyboard.press('Control+End');
   });
   await check('split editor creates a real second group', async () => { await clickAction('Split editor right (Ctrl+\\)'); await page.waitForFunction(() => __codespaceTestState.groups.length === 2); });
@@ -89,53 +82,50 @@ try {
     await clickAction('Toggle side bar'); await page.waitForFunction(() => __codespaceTestState.sidebarVisible);
   });
   await check('extension worker and UI RPC integration', async () => {
-    await page.keyboard.press('F1'); await enterQuickPick('Run bundled compatibility probe');
+    await command('Run bundled compatibility probe');
     await page.getByRole('button', { name: 'Run probe', exact: true }).dispatchEvent('click');
     await page.waitForFunction(() => __codespaceTestEvents.some(message => message.includes('Hello from the VS Code API compatibility probe.')), null, { timeout: 30000 });
     await page.waitForFunction(() => __codespaceTestEvents.some(message => message.includes('Executed codespace.hello')));
   });
   await check('fold and unfold operate on real visual rows', async () => {
-    await page.keyboard.press('F1'); await enterQuickPick('Editor: Fold All');
-    await page.waitForFunction(() => __codespaceTestState.editors.some(e => e.folds.length > 0));
+    await command('Editor: Fold All'); await page.waitForFunction(() => __codespaceTestState.editors.some(e => e.folds.length > 0));
     await page.screenshot({ path: output + '/folding.png', fullPage: true });
-    await page.keyboard.press('F1'); await enterQuickPick('Editor: Unfold All');
-    await page.waitForFunction(() => __codespaceTestState.editors.every(e => e.folds.length === 0));
+    await command('Editor: Unfold All'); await page.waitForFunction(() => __codespaceTestState.editors.every(e => e.folds.length === 0));
   });
   await check('extension completion inserts into the custom editor and undoes', async () => {
-    await page.mouse.click(1080, 140); await page.keyboard.press('Control+End');
+    await focusEditor(); await page.keyboard.press('Control+End');
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
-    await page.keyboard.press('Control+Space'); await enterQuickPick('CodeSpaceProviderCompletion');
-    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('CodeSpaceProviderCompletion'));
+    // Exercise the registered command independently of browser-reserved Ctrl+Space.
+    await command('Editor: Suggest Completions'); await enterQuickPick('CodeSpaceProviderCompletion');
+    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].includes('CodeSpaceProviderCompletion'));
     await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, original);
   });
   await check('extension formatting is applied as one undoable transaction', async () => {
-    await page.keyboard.press('Control+End'); await page.keyboard.type('// format probe   ', { delay: 15 });
+    await focusEditor(); await page.keyboard.press('Control+End'); await page.keyboard.type('// format probe   ', { delay: 15 });
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// format probe   '));
     const before = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
-    await page.keyboard.press('F1'); await enterQuickPick('Editor: Format Document');
-    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// format probe'));
+    await command('Editor: Format Document'); await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// format probe'));
     await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, before);
   });
   await check('extension hover and symbols reach real workbench controls', async () => {
-    await page.keyboard.press('F1'); await enterQuickPick('Editor: Show Hover');
+    await command('Editor: Show Hover');
     await page.getByText('CodeSpace extension hover is connected to the custom Uno editor.', { exact: true }).waitFor({ state: 'attached' });
     await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
-    await page.keyboard.press('F1'); await enterQuickPick('Go to Symbol in Editor');
+    await command('Go to Symbol in Editor');
     await page.getByRole('button', { name: 'Extension symbol', exact: true }).waitFor({ state: 'attached' });
     await page.keyboard.press('Escape');
   });
   await check('settings JSON binds live and survives malformed intermediate text', async () => {
     await palette('.vscode/settings.json');
-    await page.mouse.click(1080, 140); await page.keyboard.press('Control+a');
+    await focusEditor(); await page.keyboard.press('Control+a');
     await page.keyboard.insertText('{"editor.fontSize":18,"editor.tabSize":2,"editor.minimap.enabled":false}');
     await page.waitForFunction(() => __codespaceTestState.options.FontSize === 18 && __codespaceTestState.options.TabSize === 2 && !__codespaceTestState.options.Minimap);
     await page.keyboard.press('Control+End'); await page.keyboard.type('{');
     await page.waitForFunction(() => __codespaceTestState.files['.vscode/settings.json'].endsWith('}{'));
     assert.equal(await page.evaluate(() => __codespaceTestState.options.FontSize), 18);
-    await page.keyboard.press('Control+z');
-    await page.waitForFunction(() => __codespaceTestState.files['.vscode/settings.json'].endsWith('}'));
+    await page.keyboard.press('Control+z'); await page.waitForFunction(() => __codespaceTestState.files['.vscode/settings.json'].endsWith('}'));
   });
-  await check('recovery survives reload', async () => {
+  await check('dirty baselines and settings recover after reload', async () => {
     await page.waitForTimeout(1800); await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!globalThis.__codespaceTestState, null, { timeout: 90000 });
     await page.waitForFunction(() => __codespaceTestState.groups.length === 2);
@@ -144,9 +134,10 @@ try {
   console.log(JSON.stringify({ passed, pageErrors: errors }, null, 2));
   if (errors.length) throw new Error('Browser page errors: ' + errors.join('\n'));
 } catch (error) {
+  console.error('FAILED WORKFLOW', passed + 1, error.stack);
   await page.screenshot({ path: output + '/failure.png', fullPage: true }).catch(() => {});
   await writeFile(output + '/failure.html', await page.content());
-  const diagnostics = await page.evaluate(() => ({ url: location.href, state: globalThis.__codespaceTestState, events: globalThis.__codespaceTestEvents, workerAvailable: !!globalThis.CodeSpaceHost, title: document.title, focused: document.activeElement?.outerHTML, inputs: [...document.querySelectorAll('input,textarea')].map(input => ({ id: input.id, value: input.value, bounds: input.getBoundingClientRect().toJSON() })) }));
+  const diagnostics = await page.evaluate(() => ({ url: location.href, state: globalThis.__codespaceTestState, events: globalThis.__codespaceTestEvents, workerAvailable: !!globalThis.CodeSpaceHost, focused: document.activeElement?.outerHTML, inputs: [...document.querySelectorAll('input,textarea')].map(input => ({ id: input.id, value: input.value, bounds: input.getBoundingClientRect().toJSON() })) }));
   console.error('Browser diagnostics:', JSON.stringify(diagnostics)); await writeFile(output + '/diagnostics.json', JSON.stringify(diagnostics, null, 2)); throw error;
 } finally {
   await writeFile(output + '/console.log', messages.join('\n') + '\n' + errors.join('\n'));

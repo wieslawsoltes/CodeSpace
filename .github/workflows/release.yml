@@ -24,6 +24,7 @@ jobs:
           echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
           dotnet run --project tests/CodeSpace.Tests -c Release
           dotnet run --project tests/CodeSpace.ProtocolTests -c Release
+          dotnet run --project tests/CodeSpace.FeatureTests -c Release
           npm test --prefix src/CodeSpace.ExtensionHost
           node --test tests/browser/platform-contracts.test.mjs
       - run: dotnet workload install wasm-tools --skip-manifest-update
