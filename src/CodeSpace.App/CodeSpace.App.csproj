@@ -8,9 +8,15 @@
     <Description>Independent VS Code-style developer workbench with custom Uno Platform components.</Description>
     <IsPackable>false</IsPackable><IsUiAutomationMappingEnabled>true</IsUiAutomationMappingEnabled>
     <WasmShellMonoRuntimeExecutionMode>Interpreter</WasmShellMonoRuntimeExecutionMode><WasmShellEnableThreading>false</WasmShellEnableThreading>
+    <!-- Polymorphic docking state and extension message payloads currently use bounded reflection serialization. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-browserwasm'"><DefineConstants>$(DefineConstants);__WASM__</DefineConstants></PropertyGroup>
   <ItemGroup><ProjectReference Include="../CodeSpace.Workbench.Uno/CodeSpace.Workbench.Uno.csproj" /></ItemGroup>
+  <ItemGroup>
+    <!-- Preserve CodeSpace public contracts and anonymous RPC payload metadata in trimmed browser publishing. -->
+    <TrimmerRootAssembly Include="CodeSpace.App;CodeSpace.Core;CodeSpace.Editor;CodeSpace.Docking;CodeSpace.Languages;CodeSpace.Extensions;CodeSpace.Rendering.Skia;CodeSpace.Controls.Uno;CodeSpace.Workbench.Uno" />
+  </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'browserwasm'">
     <Content Include="../CodeSpace.ExtensionHost/*.mjs" Link="wwwroot/extension-host/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

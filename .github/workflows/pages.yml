@@ -31,9 +31,18 @@ jobs:
         run: |
           python3 tools/prepare-pages.py artifacts/browser artifacts/site
           git archive --format=zip -o artifacts/CodeSpace-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codespace-browser
+          path: artifacts/site
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Portable regression gates
+        run: |
+          dotnet run --project tests/CodeSpace.Tests -c Release
+          dotnet run --project tests/CodeSpace.ProtocolTests -c Release
+          npm test --prefix src/CodeSpace.ExtensionHost
       - name: Install browser test tools
         run: npm install --no-save playwright@1.55.1 && npx playwright install --with-deps chromium
       - name: Real Chromium interaction tests
@@ -71,10 +80,6 @@ jobs:
           path: artifacts/CodeSpace-source.zip
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: artifacts/site
-      - uses: actions/upload-artifact@v4
-        with:
-          name: codespace-browser
           path: artifacts/site
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
