@@ -4,17 +4,19 @@ using Microsoft.UI.Xaml;
 
 namespace CodeSpace.App;
 
-/// <summary>Opt-in, read-only diagnostics for real browser interaction tests. No command or code execution endpoint.</summary>
+/// <summary>Opt-in read-only state for browser interaction tests, without command execution.</summary>
 internal sealed class BrowserDiagnostics
 {
 #if __WASM__
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     public BrowserDiagnostics(WorkbenchView workbench)
     {
-        if (Uno.Foundation.WebAssemblyRuntime.InvokeJS("String(new URLSearchParams(location.search).get('e2e') === '1')") != "true") return;
+        var enabled = Uno.Foundation.WebAssemblyRuntime.InvokeJS("new URLSearchParams(location.search).get('e2e') === '1' ? 'codespace-e2e' : 'disabled'");
+        Console.WriteLine("[CodeSpace] Browser diagnostics mode: " + enabled);
+        if (enabled != "codespace-e2e") return;
         Uno.Foundation.WebAssemblyRuntime.InvokeJS("globalThis.__codespaceTestEvents = []; 'ready'");
         workbench.StatusChanged += (_, message) => Uno.Foundation.WebAssemblyRuntime.InvokeJS("globalThis.__codespaceTestEvents.push(" + JsonSerializer.Serialize(message) + "); 'recorded'");
-        _timer.Tick += (_, _) =>
+        void Publish()
         {
             var state = JsonSerializer.Serialize(new
             {
@@ -24,10 +26,11 @@ internal sealed class BrowserDiagnostics
                 panelVisible = workbench.Docking.State.PanelVisible
             });
             Uno.Foundation.WebAssemblyRuntime.InvokeJS("globalThis.__codespaceTestState = JSON.parse(" + JsonSerializer.Serialize(state) + "); 'updated'");
-        };
-        workbench.Unloaded += (_, _) => _timer.Stop(); _timer.Start();
+        }
+        _timer.Tick += (_, _) => Publish();
+        workbench.Unloaded += (_, _) => _timer.Stop(); Publish(); _timer.Start();
     }
 #else
-    public BrowserDiagnostics(WorkbenchView workbench) { }
+    public BrowserDiagnostics(WorkbenchView workbench) => Console.WriteLine("[CodeSpace] Desktop diagnostics adapter.");
 #endif
 }

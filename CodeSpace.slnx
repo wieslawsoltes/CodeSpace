@@ -7,5 +7,5 @@
     <Project Path="src/CodeSpace.Extensions/CodeSpace.Extensions.csproj" />
     <Project Path="src/CodeSpace.Rendering.Skia/CodeSpace.Rendering.Skia.csproj" />
   </Folder>
-  <Folder Name="/tests/"><Project Path="tests/CodeSpace.Tests/CodeSpace.Tests.csproj" /></Folder>
+  <Folder Name="/tests/"><Project Path="tests/CodeSpace.Tests/CodeSpace.Tests.csproj" /><Project Path="tests/CodeSpace.ProtocolTests/CodeSpace.ProtocolTests.csproj" /></Folder>
 </Solution>

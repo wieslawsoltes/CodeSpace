@@ -9,6 +9,7 @@
     <IsPackable>false</IsPackable><IsUiAutomationMappingEnabled>true</IsUiAutomationMappingEnabled>
     <WasmShellMonoRuntimeExecutionMode>Interpreter</WasmShellMonoRuntimeExecutionMode><WasmShellEnableThreading>false</WasmShellEnableThreading>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-browserwasm'"><DefineConstants>$(DefineConstants);__WASM__</DefineConstants></PropertyGroup>
   <ItemGroup><ProjectReference Include="../CodeSpace.Workbench.Uno/CodeSpace.Workbench.Uno.csproj" /></ItemGroup>
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'browserwasm'">
     <Content Include="../CodeSpace.ExtensionHost/*.mjs" Link="wwwroot/extension-host/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

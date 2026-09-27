@@ -12,35 +12,38 @@ concurrency:
 jobs:
   browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
       - name: Install WebAssembly build tools
         run: dotnet workload install wasm-tools --skip-manifest-update
       - name: Publish Uno browser app
-        run: dotnet publish src/CodeSpace.App -f net10.0-browserwasm -c Release -p:CodeSpaceTargetFrameworks=net10.0-browserwasm -o artifacts/browser
-      - name: Stage static site
-        shell: bash
+        run: dotnet publish src/CodeSpace.App -f net10.0-browserwasm -c Release -p:CodeSpaceTargetFrameworks=net10.0-browserwasm -p:WasmShellWebAppBasePath=/CodeSpace/ -o artifacts/browser
+      - name: Stage static site and source archive
         run: |
-          set -euo pipefail
-          root=$(find artifacts/browser -type f -name index.html -printf '%h\n' | head -n 1)
-          test -n "$root"
-          mkdir -p artifacts/site/extension-host
-          cp -a "$root"/. artifacts/site/
-          cp src/CodeSpace.ExtensionHost/*.mjs artifacts/site/extension-host/
-          touch artifacts/site/.nojekyll
-          printf '{"commit":"%s","version":"0.1.0"}\n' "$GITHUB_SHA" > artifacts/site/build-info.json
+          python3 tools/prepare-pages.py artifacts/browser artifacts/site
+          git archive --format=zip -o artifacts/CodeSpace-source.zip HEAD
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install browser test tools
         run: npm install --no-save playwright@1.55.1 && npx playwright install --with-deps chromium
       - name: Real Chromium interaction tests
+        env:
+          BASE_URL: http://127.0.0.1:4173/CodeSpace/
         shell: bash
         run: |
-          python3 -m http.server 4173 --directory artifacts/site > /tmp/codespace-http.log 2>&1 &
+          mkdir -p artifacts/serve
+          ln -s "$PWD/artifacts/site" artifacts/serve/CodeSpace
+          python3 -m http.server 4173 --directory artifacts/serve > artifacts/server.log 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
           node tests/browser/smoke.mjs
@@ -48,7 +51,24 @@ jobs:
         if: always()
         with:
           name: browser-interaction-results
-          path: artifacts/browser-tests
+          path: |
+            artifacts/browser-tests
+            artifacts/server.log
+      - name: Pack all eight reusable libraries
+        shell: bash
+        run: |
+          for project in Core Editor Docking Languages Extensions Rendering.Skia Controls.Uno Workbench.Uno; do
+            dotnet pack "src/CodeSpace.$project/CodeSpace.$project.csproj" -c Release -o artifacts/packages
+          done
+          npm pack ./src/CodeSpace.ExtensionHost --pack-destination artifacts/packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reusable-packages
+          path: artifacts/packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-distribution
+          path: artifacts/CodeSpace-source.zip
       - uses: actions/upload-pages-artifact@v3
         with:
           path: artifacts/site

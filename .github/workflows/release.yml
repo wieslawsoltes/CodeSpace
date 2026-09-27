@@ -1,0 +1,99 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  packages-and-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate tag and engines
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          dotnet run --project tests/CodeSpace.Tests -c Release
+          dotnet run --project tests/CodeSpace.ProtocolTests -c Release
+          npm test --prefix src/CodeSpace.ExtensionHost
+      - run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Package libraries and source
+        shell: bash
+        run: |
+          mkdir -p artifacts/release
+          for project in Core Editor Docking Languages Extensions Rendering.Skia Controls.Uno Workbench.Uno; do
+            dotnet pack "src/CodeSpace.$project/CodeSpace.$project.csproj" -c Release -p:Version="$RELEASE_VERSION" -o artifacts/release
+          done
+          npm pack ./src/CodeSpace.ExtensionHost --pack-destination artifacts/release
+          git archive --format=zip -o "artifacts/release/CodeSpace-$RELEASE_VERSION-source.zip" HEAD
+      - name: Publish browser archive
+        run: |
+          dotnet publish src/CodeSpace.App -f net10.0-browserwasm -c Release -p:CodeSpaceTargetFrameworks=net10.0-browserwasm -p:Version="$RELEASE_VERSION" -o artifacts/browser
+          python3 tools/prepare-pages.py artifacts/browser artifacts/site
+          cd artifacts/site && zip -qr "../release/CodeSpace-$RELEASE_VERSION-browser.zip" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-packages-browser
+          path: artifacts/release
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish desktop
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          dotnet publish src/CodeSpace.App -f net10.0-desktop -r "${{ matrix.rid }}" --self-contained false -c Release -p:CodeSpaceTargetFrameworks=net10.0-desktop -p:Version="$version" -o artifacts/desktop
+          cp LICENSE THIRD-PARTY-NOTICES.md artifacts/desktop/
+      - name: Archive desktop
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/release | Out-Null
+          Compress-Archive -Path artifacts/desktop/* -DestinationPath "artifacts/release/CodeSpace-${{ matrix.rid }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/release
+  draft:
+    needs: [packages-and-browser, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: artifacts/release
+      - name: Checksums and draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cd artifacts/release
+          sha256sum * > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" ./* --repo "$GITHUB_REPOSITORY" --draft --prerelease --verify-tag --title "CodeSpace $GITHUB_REF_NAME" --notes "Development preview. Read docs/compatibility.md. Extension compatibility is partial; archives are unsigned and not production-qualified. Desktop archives require a compatible .NET runtime and native dependencies. Node.js is optional and not bundled."

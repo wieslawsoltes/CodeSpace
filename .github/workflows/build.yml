@@ -12,15 +12,23 @@ concurrency:
 jobs:
   engine:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
       - name: Build reusable engines
         run: dotnet build CodeSpace.slnx -c Release
       - name: Regression and randomized differential tests
-        run: dotnet run --project tests/CodeSpace.Tests -c Release --no-build
+        run: |
+          dotnet run --project tests/CodeSpace.Tests -c Release --no-build
+          dotnet run --project tests/CodeSpace.ProtocolTests -c Release --no-build
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -38,10 +46,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
       - name: Build desktop Uno workbench
         run: dotnet build src/CodeSpace.App -f net10.0-desktop -c Release -p:CodeSpaceTargetFrameworks=net10.0-desktop

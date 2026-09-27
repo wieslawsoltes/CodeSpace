@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/CodeSpace.App/CodeSpace.App.csproj" />
+  <Project Path="src/CodeSpace.Controls.Uno/CodeSpace.Controls.Uno.csproj" />
+  <Project Path="src/CodeSpace.Workbench.Uno/CodeSpace.Workbench.Uno.csproj" />
+</Solution>

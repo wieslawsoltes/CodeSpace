@@ -24,7 +24,9 @@ public sealed class EditorSession
     private readonly List<EditorSnapshot> _undo = [];
     private readonly Stack<EditorSnapshot> _redo = new();
     private Selection[] _selections = [new(0, 0)];
+    private TextBuffer _savedBuffer;
     private int? _preferredColumn;
+    private int _tabSize = 4;
     public WorkspaceFile File { get; }
     public TextBuffer Buffer => File.Buffer;
     public IReadOnlyList<Selection> Selections => _selections;
@@ -32,13 +34,18 @@ public sealed class EditorSession
     public long Version { get; private set; }
     public bool CanUndo => _undo.Count != 0;
     public bool CanRedo => _redo.Count != 0;
-    public bool IsDirty { get; private set; }
-    public int TabSize { get; set; } = 4;
+    public bool IsDirty => !ReferenceEquals(Buffer, _savedBuffer);
+    public int TabSize { get => _tabSize; set => _tabSize = Math.Clamp(value, 1, 16); }
     public string Eol { get; }
     public event EventHandler<DocumentChangedEventArgs>? Changed;
     public event EventHandler? SelectionChanged;
-    public EditorSession(WorkspaceFile file) { File = file; Eol = file.Buffer.ToString().Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n"; }
-    public void MarkSaved() { File.MarkSaved(); IsDirty = false; SelectionChanged?.Invoke(this, EventArgs.Empty); }
+    public EditorSession(WorkspaceFile file)
+    {
+        File = file; var text = file.Buffer.ToString();
+        _savedBuffer = string.Equals(text, file.SavedText, StringComparison.Ordinal) ? file.Buffer : new TextBuffer(file.SavedText);
+        Eol = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+    }
+    public void MarkSaved() { File.MarkSaved(); _savedBuffer = Buffer; SelectionChanged?.Invoke(this, EventArgs.Empty); }
     public void Select(int anchor, int active, bool add = false)
     {
         var selection = new Selection(Math.Clamp(anchor, 0, Buffer.Length), Math.Clamp(active, 0, Buffer.Length));
@@ -71,8 +78,8 @@ public sealed class EditorSession
     }
     private void Notify(int firstLine)
     {
-        Version++; IsDirty = !string.Equals(Buffer.ToString(), File.SavedText, StringComparison.Ordinal);
-        Changed?.Invoke(this, new DocumentChangedEventArgs(firstLine, Version)); SelectionChanged?.Invoke(this, EventArgs.Empty);
+        // Dirty tracking is a structural snapshot comparison: never flatten the document on a keystroke.
+        Version++; Changed?.Invoke(this, new DocumentChangedEventArgs(firstLine, Version)); SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
     public void Insert(string text) => ReplaceSelections(_ => text);
     public void InsertNewLine() => ReplaceSelections(selection =>
@@ -84,13 +91,13 @@ public sealed class EditorSession
     });
     private void ReplaceSelections(Func<Selection, string> replacement)
     {
-        _selections = Normalize(_selections); var edits = _selections.Select(s => new TextEdit(s.Start, s.Length, replacement(s))).ToArray();
-        Apply(edits);
+        var selections = Normalize(_selections); var edits = selections.Select(s => new TextEdit(s.Start, s.Length, replacement(s))).ToArray(); Apply(edits);
     }
     public void Apply(IEnumerable<TextEdit> edits)
     {
         var ordered = edits.OrderBy(e => e.Start).ToArray(); if (ordered.Length == 0) return;
         var updated = Buffer.Apply(ordered); // Validate the complete transaction before recording history.
+        if (ReferenceEquals(updated, Buffer)) return;
         var firstLine = Buffer.PositionAt(ordered[0].Start).Line; BeforeEdit();
         var delta = 0; var cursors = new List<Selection>();
         foreach (var edit in ordered) { var end = edit.Start + delta + edit.Text.Length; cursors.Add(new Selection(end, end)); delta += edit.Text.Length - edit.Length; }
@@ -98,12 +105,14 @@ public sealed class EditorSession
     }
     public void Delete(bool backward)
     {
-        var expanded = _selections.Select(s => s.Length != 0 ? s : backward ? new Selection(PreviousGrapheme(s.Active), s.Active) : new Selection(s.Active, NextGrapheme(s.Active)));
-        _selections = Normalize(expanded); if (_selections.All(s => s.Length == 0)) return; Insert("");
+        var expanded = Normalize(_selections.Select(s => s.Length != 0 ? s : backward ? new Selection(PreviousGrapheme(s.Active), s.Active) : new Selection(s.Active, NextGrapheme(s.Active))));
+        // Preserve the original caret(s) in the undo snapshot, not the temporary deletion ranges.
+        Apply(expanded.Where(s => s.Length != 0).Select(s => new TextEdit(s.Start, s.Length, "")));
     }
     public int PreviousGrapheme(int offset)
     {
-        if (offset <= 0) return 0;
+        offset = Math.Clamp(offset, 0, Buffer.Length); if (offset <= 0) return 0;
+        if (Buffer[offset - 1] is >= ' ' and <= '~' or '\t') return offset - 1;
         var position = Buffer.PositionAt(offset); var start = Buffer.GetLineStart(position.Line);
         if (offset == start) return offset >= 2 && Buffer[offset - 2] == '\r' ? offset - 2 : offset - 1;
         var text = Buffer.Slice(start, offset - start); var elements = StringInfo.ParseCombiningCharacters(text);
@@ -111,9 +120,10 @@ public sealed class EditorSession
     }
     public int NextGrapheme(int offset)
     {
-        if (offset >= Buffer.Length) return Buffer.Length;
+        offset = Math.Clamp(offset, 0, Buffer.Length); if (offset >= Buffer.Length) return Buffer.Length;
         if (Buffer[offset] == '\r' && offset + 1 < Buffer.Length && Buffer[offset + 1] == '\n') return offset + 2;
         if (Buffer[offset] == '\n') return offset + 1;
+        if (Buffer[offset] <= 0x7f && (offset + 1 == Buffer.Length || Buffer[offset + 1] <= 0x7f)) return offset + 1;
         var line = Buffer.GetLine(Buffer.PositionAt(offset).Line); var remaining = Math.Max(1, line.Start + line.Length - offset);
         var text = Buffer.Slice(offset, Math.Min(remaining, Buffer.Length - offset));
         return offset + StringInfo.GetNextTextElementLength(text.AsSpan());
@@ -125,7 +135,7 @@ public sealed class EditorSession
         else _preferredColumn = null;
         _selections = _selections.Select(selection =>
         {
-            var offset = selection.Active; var pos = Buffer.PositionAt(offset); var line = Buffer.GetLine(pos.Line);
+            var offset = selection.Active; var pos = Buffer.PositionAt(offset);
             var target = direction switch
             {
                 CursorMove.Left => !extend && selection.Length > 0 ? selection.Start : PreviousGrapheme(offset),
@@ -134,8 +144,8 @@ public sealed class EditorSession
                 CursorMove.Down => Buffer.OffsetAt(new(pos.Line + 1, _preferredColumn ?? pos.Character)),
                 CursorMove.PageUp => Buffer.OffsetAt(new(pos.Line - pageSize, _preferredColumn ?? pos.Character)),
                 CursorMove.PageDown => Buffer.OffsetAt(new(pos.Line + pageSize, _preferredColumn ?? pos.Character)),
-                CursorMove.Home => line.Start,
-                CursorMove.End => line.Start + line.Length,
+                CursorMove.Home => Buffer.GetLineStart(pos.Line),
+                CursorMove.End => Buffer.GetLineStart(pos.Line) + Buffer.GetLine(pos.Line).Length,
                 CursorMove.DocumentStart => 0,
                 CursorMove.DocumentEnd => Buffer.Length,
                 _ => offset
@@ -180,7 +190,9 @@ public sealed class EditorSession
     }
     public void ToggleLineComment(string prefix = "//")
     {
+        if (string.IsNullOrEmpty(prefix)) throw new ArgumentException("A nonempty comment prefix is required.", nameof(prefix));
         var start = Buffer.PositionAt(Primary.Start).Line; var end = Buffer.PositionAt(Primary.End).Line;
+        if (Primary.Length > 0 && end > start && Primary.End == Buffer.GetLineStart(end)) end--;
         var lines = Enumerable.Range(start, end - start + 1).Select(Buffer.GetLine).ToArray();
         var remove = lines.All(l => l.Text.TrimStart().StartsWith(prefix, StringComparison.Ordinal));
         Apply(lines.Select(line =>
@@ -193,6 +205,7 @@ public sealed class EditorSession
     {
         if (!unindent && Primary.Length == 0) { Insert(new string(' ', TabSize)); return; }
         var start = Buffer.PositionAt(Primary.Start).Line; var end = Buffer.PositionAt(Primary.End).Line;
+        if (Primary.Length > 0 && end > start && Primary.End == Buffer.GetLineStart(end)) end--;
         Apply(Enumerable.Range(start, end - start + 1).Select(i =>
         {
             var line = Buffer.GetLine(i); var count = line.Text.StartsWith('\t') ? 1 : line.Text.TakeWhile(c => c == ' ').Take(TabSize).Count();
