@@ -1,1 +1,16 @@
-<Project Sdk="Uno.Sdk"><PropertyGroup><TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks><TargetFrameworks Condition="'$(CodeSpaceTargetFrameworks)' != ''">$(CodeSpaceTargetFrameworks)</TargetFrameworks><UnoSingleProject>true</UnoSingleProject><UnoFeatures>SkiaRenderer</UnoFeatures><OutputType>Library</OutputType><GenerateLibraryLayout>true</GenerateLibraryLayout><Description>Composable VS Code-style workbench with custom Uno components.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Controls.Uno/CodeSpace.Controls.Uno.csproj" /><ProjectReference Include="../CodeSpace.Extensions/CodeSpace.Extensions.csproj" /></ItemGroup></Project>
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CodeSpaceTargetFrameworks)' != ''">$(CodeSpaceTargetFrameworks)</TargetFrameworks>
+    <UnoSingleProject>true</UnoSingleProject>
+    <UnoFeatures>SkiaRenderer</UnoFeatures>
+    <OutputType>Library</OutputType>
+    <IsPackable>true</IsPackable>
+    <GenerateLibraryLayout>true</GenerateLibraryLayout>
+    <Description>Composable VS Code-style workbench with custom Uno components.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../CodeSpace.Controls.Uno/CodeSpace.Controls.Uno.csproj" />
+    <ProjectReference Include="../CodeSpace.Extensions/CodeSpace.Extensions.csproj" />
+  </ItemGroup>
+</Project>

@@ -19,16 +19,15 @@ async function clickAction(name) {
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 }
 async function enterQuickPick(query) {
-  await page.getByRole('textbox', { name: 'Command palette input', exact: true }).waitFor({ state: 'attached' });
-  // The custom overlay's semantic textbox bounds are local rather than screen coordinates.
-  // Its rendered position is fixed by this test's 1440x900 viewport: centered below the title bar.
-  await page.mouse.click(page.viewportSize().width / 2, 66);
-  await page.waitForTimeout(200);
-  await page.keyboard.press('Control+a'); await page.keyboard.type(query, { delay: 20 });
+  const input = page.getByRole('textbox', { name: 'Command palette input', exact: true });
+  await input.waitFor({ state: 'attached' });
+  // Uno's accessibility textbox is a native input; fill dispatches its real input event
+  // atomically rather than racing initial focus with individual query characters.
+  await input.fill(query);
   await page.waitForFunction(value => [...document.querySelectorAll('input,textarea')].some(input => input.value === value), query);
   await page.waitForTimeout(300);
   await page.screenshot({ path: output + '/quick-pick-' + passed + '.png', fullPage: true });
-  await page.keyboard.press('Enter');
+  await input.press('Enter');
 }
 async function palette(query) { await clickAction('Search files (Ctrl+P)'); await enterQuickPick(query); }
 try {

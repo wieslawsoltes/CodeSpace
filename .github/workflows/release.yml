@@ -25,6 +25,7 @@ jobs:
           dotnet run --project tests/CodeSpace.Tests -c Release
           dotnet run --project tests/CodeSpace.ProtocolTests -c Release
           npm test --prefix src/CodeSpace.ExtensionHost
+          node --test tests/browser/platform-contracts.test.mjs
       - run: dotnet workload install wasm-tools --skip-manifest-update
       - name: Package libraries and source
         shell: bash
@@ -33,7 +34,9 @@ jobs:
           for project in Core Editor Docking Languages Extensions Rendering.Skia Controls.Uno Workbench.Uno; do
             dotnet pack "src/CodeSpace.$project/CodeSpace.$project.csproj" -c Release -p:Version="$RELEASE_VERSION" -o artifacts/release
           done
+          npm pkg set version="$RELEASE_VERSION" --prefix src/CodeSpace.ExtensionHost
           npm pack ./src/CodeSpace.ExtensionHost --pack-destination artifacts/release
+          python3 tools/verify-packages.py artifacts/release
           git archive --format=zip -o "artifacts/release/CodeSpace-$RELEASE_VERSION-source.zip" HEAD
       - name: Publish browser archive
         run: |

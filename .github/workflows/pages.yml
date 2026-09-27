@@ -88,13 +88,14 @@ jobs:
           path: |
             artifacts/browser-tests
             artifacts/server.log
-      - name: Pack all eight reusable libraries
+      - name: Pack and verify all eight reusable libraries
         shell: bash
         run: |
           for project in Core Editor Docking Languages Extensions Rendering.Skia Controls.Uno Workbench.Uno; do
             dotnet pack "src/CodeSpace.$project/CodeSpace.$project.csproj" -c Release -o artifacts/packages
           done
           npm pack ./src/CodeSpace.ExtensionHost --pack-destination artifacts/packages
+          python3 tools/verify-packages.py artifacts/packages
       - uses: actions/upload-artifact@v4
         with:
           name: reusable-packages
