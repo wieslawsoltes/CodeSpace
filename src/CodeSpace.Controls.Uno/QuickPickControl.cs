@@ -13,9 +13,10 @@ public sealed class QuickPickControl : Grid
     private readonly TextBox _input;
     private readonly StackPanel _results;
     private readonly TextBlock _hint;
+    private readonly DispatcherTimer _focusTimer = new() { Interval = TimeSpan.FromMilliseconds(25) };
     private QuickPickItem[] _items = [];
     private QuickPickItem[] _filtered = [];
-    private int _selected;
+    private int _selected, _focusAttempts;
     private Action<string>? _submit;
     public event EventHandler? Dismissed;
     public QuickPickControl()
@@ -36,17 +37,27 @@ public sealed class QuickPickControl : Grid
             else if (e.Key == VirtualKey.Up) { _selected = Math.Max(0, _selected - 1); DrawRows(); e.Handled = true; }
             else if (e.Key == VirtualKey.Enter) { var submit = _submit; var text = _input.Text; if (submit is not null) { Hide(); submit(text); } else Choose(_selected); e.Handled = true; }
         };
+        _focusTimer.Tick += (_, _) =>
+        {
+            // A collapsed control can report a stale location before its first layout.
+            // Focus only after layout so Uno can place its native text-input bridge correctly.
+            if (Visibility != Visibility.Visible || ++_focusAttempts > 20) { _focusTimer.Stop(); return; }
+            if (_input.ActualWidth > 10 && _input.ActualHeight > 10 && _input.Focus(FocusState.Programmatic))
+            { _input.Select(_input.Text.Length, 0); _focusTimer.Stop(); }
+        };
+        Unloaded += (_, _) => _focusTimer.Stop();
         PointerPressed += (_, e) => { if (ReferenceEquals(e.OriginalSource, this)) Hide(); };
     }
     public void Show(IEnumerable<QuickPickItem> items, string placeholder = "Type a command", string initialText = "")
     {
-        _submit = null; _items = items.ToArray(); _input.PlaceholderText = placeholder; _input.Text = initialText; Visibility = Visibility.Visible; _selected = 0; Refresh(); _input.Focus(FocusState.Programmatic); _input.Select(_input.Text.Length, 0);
+        _focusTimer.Stop(); _submit = null; _items = items.ToArray(); _input.PlaceholderText = placeholder; _input.Text = initialText;
+        Visibility = Visibility.Visible; _selected = 0; Refresh(); _focusAttempts = 0; _focusTimer.Start();
     }
     public void Prompt(string placeholder, Action<string> submit, string initialText = "")
     {
         Show([], placeholder, initialText); _submit = submit; _hint.Text = "Enter to confirm    Esc to cancel";
     }
-    public void Hide() { Visibility = Visibility.Collapsed; _submit = null; Dismissed?.Invoke(this, EventArgs.Empty); }
+    public void Hide() { _focusTimer.Stop(); Visibility = Visibility.Collapsed; _submit = null; Dismissed?.Invoke(this, EventArgs.Empty); }
     private void Refresh()
     {
         _filtered = _items.Select(i => (Item: i, Score: CommandRegistry.FuzzyScore(i.Label, _input.Text))).Where(x => x.Score >= 0).OrderByDescending(x => x.Score).Take(60).Select(x => x.Item).ToArray();

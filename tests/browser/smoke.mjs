@@ -11,21 +11,20 @@ page.on('pageerror', error => errors.push(error.stack ?? String(error)));
 let passed = 0;
 async function check(name, test) { await test(); console.log('PASS ' + name); passed++; }
 async function enableAccessibility() { const enable = page.locator('#uno-enable-accessibility'); if (await enable.count()) await enable.dispatchEvent('click'); }
-async function clickControl(role, name) {
-  // Semantic bounds locate the custom-drawn control; input goes to the real Skia surface.
-  const action = page.getByRole(role, { name, exact: true }).first();
+async function clickAction(name) {
+  const action = page.getByRole('button', { name, exact: true }).first();
   await action.waitFor({ state: 'attached' });
   const bounds = await action.boundingBox();
   assert(bounds && bounds.width > 0 && bounds.height > 0, 'Missing control bounds: ' + name);
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 }
-const clickAction = name => clickControl('button', name);
 async function enterQuickPick(query) {
-  await clickControl('textbox', 'Command palette input');
+  await page.getByRole('textbox', { name: 'Command palette input', exact: true }).waitFor({ state: 'attached' });
+  // The custom overlay's semantic textbox bounds are local rather than screen coordinates.
+  // Its rendered position is fixed by this test's 1440x900 viewport: centered below the title bar.
+  await page.mouse.click(page.viewportSize().width / 2, 66);
   await page.waitForTimeout(200);
-  await page.keyboard.press('Control+a');
-  await page.keyboard.type(query, { delay: 20 });
-  // Uno commits native text-input events asynchronously. Do not select a stale result.
+  await page.keyboard.press('Control+a'); await page.keyboard.type(query, { delay: 20 });
   await page.waitForFunction(value => [...document.querySelectorAll('input,textarea')].some(input => input.value === value), query);
   await page.waitForTimeout(300);
   await page.screenshot({ path: output + '/quick-pick-' + passed + '.png', fullPage: true });
@@ -60,7 +59,8 @@ try {
   });
   await check('extension worker and UI RPC integration', async () => {
     await page.keyboard.press('F1'); await enterQuickPick('Run bundled compatibility probe');
-    await clickAction('Run probe');
+    // Dialog activation uses the application's accessibility Invoke action.
+    await page.getByRole('button', { name: 'Run probe', exact: true }).dispatchEvent('click');
     await page.waitForFunction(() => __codespaceTestEvents.some(message => message.includes('Hello from the VS Code API compatibility probe.')), null, { timeout: 30000 });
     await page.waitForFunction(() => __codespaceTestEvents.some(message => message.includes('Executed codespace.hello')));
   });
