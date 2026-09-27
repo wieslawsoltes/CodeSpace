@@ -13,10 +13,17 @@ async function check(name, test) { console.log('START ' + name); await test(); c
 async function enableAccessibility() { const enable = page.locator('#uno-enable-accessibility'); if (await enable.count()) await enable.dispatchEvent('click'); }
 async function clickAction(name) {
   const action = page.getByRole('button', { name, exact: true }).first();
-  await action.waitFor({ state: 'attached' });
-  const bounds = await action.boundingBox();
-  assert(bounds && bounds.width > 0 && bounds.height > 0, 'Missing control bounds: ' + name);
-  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    await action.waitFor({ state: 'attached' });
+    const bounds = await action.boundingBox();
+    if (bounds && bounds.width > 0 && bounds.height > 0) {
+      await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); return;
+    }
+    // Uno's automation peer can appear before its first layout pass.
+    await page.waitForTimeout(50);
+  }
+  assert.fail('Missing rendered control bounds: ' + name);
 }
 async function enterQuickPick(query) {
   const input = page.getByRole('textbox', { name: 'Command palette input', exact: true });
@@ -28,9 +35,7 @@ async function enterQuickPick(query) {
 }
 async function palette(query) { await clickAction('Search files (Ctrl+P)'); await enterQuickPick(query); }
 async function command(query) { await page.keyboard.press('F1'); await enterQuickPick(query); }
-async function focusEditor() {
-  await page.mouse.click(620, 114); await page.waitForTimeout(200);
-}
+async function focusEditor() { await page.mouse.click(620, 114); await page.waitForTimeout(200); }
 try {
   await page.goto((process.env.BASE_URL ?? 'http://127.0.0.1:4173/') + '?e2e=1', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!globalThis.__codespaceTestState, null, { timeout: 90000 });
@@ -43,13 +48,16 @@ try {
   });
   await page.screenshot({ path: output + '/workbench.png', fullPage: true });
   await check('quick open changes active document', async () => { await palette('src/Workbench.cs'); await page.waitForFunction(() => __codespaceTestState.groups[0].activeTab === 'src/Workbench.cs'); });
-  await check('custom editor typing and undo', async () => {
+  await check('custom editor typing and undo preserve tab controls', async () => {
     await focusEditor(); await page.keyboard.press('Control+End');
+    const split = page.getByRole('button', { name: 'Split editor right (Ctrl+\\)', exact: true });
+    const identity = await split.getAttribute('id'); assert(identity);
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
     await page.keyboard.type('// browser smoke', { delay: 20 });
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// browser smoke'));
     for (let i = 0; i < '// browser smoke'.length; i++) await page.keyboard.press('Control+z');
     await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    await page.waitForTimeout(300); assert.equal(await split.getAttribute('id'), identity, 'Typing must not rebuild the tab strip');
   });
   await check('selection, deletion and redo use the document history', async () => {
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
@@ -94,7 +102,6 @@ try {
   await check('extension completion inserts into the custom editor and undoes', async () => {
     await focusEditor(); await page.keyboard.press('Control+End');
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
-    // Verify the command path separately from the unresolved split-focus shortcut path.
     await command('Editor: Suggest Completions'); await enterQuickPick('CodeSpaceProviderCompletion');
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].includes('CodeSpaceProviderCompletion'));
     await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, original);
@@ -108,7 +115,6 @@ try {
   });
   await check('extension hover and symbols reach real workbench controls', async () => {
     await command('Editor: Show Hover');
-    // Skia text is represented by an accessibility label, not a DOM text node.
     await page.getByLabel('CodeSpace extension hover is connected to the custom Uno editor.', { exact: true }).waitFor({ state: 'attached' });
     await page.screenshot({ path: output + '/extension-hover.png', fullPage: true });
     await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');

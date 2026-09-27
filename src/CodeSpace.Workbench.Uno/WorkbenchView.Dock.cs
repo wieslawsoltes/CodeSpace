@@ -88,7 +88,9 @@ public sealed partial class WorkbenchView
     }
     private void RefreshTabs()
     {
-        foreach (var group in _layout.Groups) if (_tabHosts.TryGetValue(group.Id, out var host)) host.Child = CreateTabs(group);
+        foreach (var host in _tabHosts.Values)
+            if (host.Child is EditorTabs tabs)
+                tabs.UpdateDirty(path => _sessions.TryGetValue(path, out var session) && session.IsDirty);
     }
     private EditorSession SessionFor(string path)
     {
