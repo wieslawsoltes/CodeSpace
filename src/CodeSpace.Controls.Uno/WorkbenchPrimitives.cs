@@ -28,7 +28,9 @@ public static class WorkbenchColors
 }
 public static class KeyModifiers
 {
-    public static bool Down(VirtualKey key) => (InputKeyboardSource.GetKeyStateForCurrentThread(key) & CoreVirtualKeyStates.Down) != 0;
+    /// <summary>Optional platform state provider. Return null to use Uno's native state.</summary>
+    public static Func<VirtualKey, bool?>? KeyStateOverride { get; set; }
+    public static bool Down(VirtualKey key) => KeyStateOverride?.Invoke(key) ?? ((InputKeyboardSource.GetKeyStateForCurrentThread(key) & CoreVirtualKeyStates.Down) != 0);
     public static bool Control => Down(VirtualKey.Control) || Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows);
     public static bool Shift => Down(VirtualKey.Shift);
     public static bool Alt => Down(VirtualKey.Menu);

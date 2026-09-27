@@ -20,6 +20,7 @@ public sealed partial class App : Application
         {
             Console.WriteLine("[CodeSpace] Initializing fonts.");
             await ApplicationFonts.InitializeAsync();
+            BrowserKeyboardInput.Initialize();
             _platform = new WorkbenchPlatform(); _workbench = new WorkbenchView(_platform); _window.Content = _workbench;
             Console.WriteLine("[CodeSpace] Workbench constructed.");
             _diagnostics = new BrowserDiagnostics(_workbench);
