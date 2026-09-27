@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><LangVersion>latest</LangVersion>
+    <Version>0.1.0</Version><Authors>CodeSpace contributors</Authors>
+    <RepositoryUrl>https://github.com/wieslawsoltes/CodeSpace</RepositoryUrl><RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression><PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Reusable components for the CodeSpace cross-platform developer workbench.</Description>
+    <Deterministic>true</Deterministic><ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <DebugType>embedded</DebugType><NoWarn>$(NoWarn);CS1591</NoWarn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup><None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" /></ItemGroup>
+</Project>
