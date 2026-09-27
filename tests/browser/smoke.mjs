@@ -11,25 +11,32 @@ page.on('pageerror', error => errors.push(error.stack ?? String(error)));
 let passed = 0;
 async function check(name, test) { await test(); console.log('PASS ' + name); passed++; }
 async function enableAccessibility() { const enable = page.locator('#uno-enable-accessibility'); if (await enable.count()) await enable.dispatchEvent('click'); }
-async function clickAction(name) {
-  // Uno's semantic DOM intentionally has pointer-events:none. Its bounds locate
-  // the visible control; a real mouse click is dispatched to the Skia canvas.
-  const action = page.getByRole('button', { name, exact: true }).first();
+async function clickControl(role, name) {
+  // Semantic bounds locate the custom-drawn control; input goes to the real Skia surface.
+  const action = page.getByRole(role, { name, exact: true }).first();
   await action.waitFor({ state: 'attached' });
   const bounds = await action.boundingBox();
   assert(bounds && bounds.width > 0 && bounds.height > 0, 'Missing control bounds: ' + name);
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 }
+const clickAction = name => clickControl('button', name);
 async function enterQuickPick(query) {
-  await page.getByRole('textbox', { name: 'Command palette input', exact: true }).waitFor({ state: 'attached' });
-  await page.waitForTimeout(150);
-  await page.keyboard.press('Control+a'); await page.keyboard.insertText(query); await page.keyboard.press('Enter');
+  await clickControl('textbox', 'Command palette input');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type(query, { delay: 20 });
+  // Uno commits native text-input events asynchronously. Do not select a stale result.
+  await page.waitForFunction(value => [...document.querySelectorAll('input,textarea')].some(input => input.value === value), query);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: output + '/quick-pick-' + passed + '.png', fullPage: true });
+  await page.keyboard.press('Enter');
 }
 async function palette(query) { await clickAction('Search files (Ctrl+P)'); await enterQuickPick(query); }
 try {
   await page.goto((process.env.BASE_URL ?? 'http://127.0.0.1:4173/') + '?e2e=1', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!globalThis.__codespaceTestState, null, { timeout: 90000 });
-  await enableAccessibility();
+  await page.locator('.uno-loader').waitFor({ state: 'detached', timeout: 30000 });
+  await enableAccessibility(); await page.waitForTimeout(600);
   await check('Uno startup and custom workbench', async () => {
     assert.equal(await page.locator('canvas').count() > 0, true);
     assert.equal(await page.evaluate(() => __codespaceTestState.groups[0].activeTab), 'src/Program.cs');
@@ -40,9 +47,10 @@ try {
   await check('custom editor typing and undo', async () => {
     await page.mouse.click(620, 114); await page.keyboard.press('Control+End');
     const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
-    await page.keyboard.insertText('// browser smoke');
+    await page.keyboard.type('// browser smoke', { delay: 20 });
     await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// browser smoke'));
-    await page.keyboard.press('Control+z'); await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
+    for (let i = 0; i < '// browser smoke'.length; i++) await page.keyboard.press('Control+z');
+    await page.waitForFunction(value => __codespaceTestState.files['src/Workbench.cs'] === value, original);
   });
   await check('split editor creates a real second group', async () => { await clickAction('Split editor right (Ctrl+\\)'); await page.waitForFunction(() => __codespaceTestState.groups.length === 2); });
   await page.screenshot({ path: output + '/split-editors.png', fullPage: true });
@@ -66,7 +74,7 @@ try {
 } catch (error) {
   await page.screenshot({ path: output + '/failure.png', fullPage: true }).catch(() => {});
   await writeFile(output + '/failure.html', await page.content());
-  const diagnostics = await page.evaluate(() => ({ url: location.href, state: globalThis.__codespaceTestState, events: globalThis.__codespaceTestEvents, workerAvailable: !!globalThis.CodeSpaceHost, title: document.title }));
+  const diagnostics = await page.evaluate(() => ({ url: location.href, state: globalThis.__codespaceTestState, events: globalThis.__codespaceTestEvents, workerAvailable: !!globalThis.CodeSpaceHost, title: document.title, focused: document.activeElement?.outerHTML, inputs: [...document.querySelectorAll('input,textarea')].map(input => ({ id: input.id, value: input.value, bounds: input.getBoundingClientRect().toJSON() })) }));
   console.error('Browser diagnostics:', JSON.stringify(diagnostics)); await writeFile(output + '/diagnostics.json', JSON.stringify(diagnostics, null, 2)); throw error;
 } finally {
   await writeFile(output + '/console.log', messages.join('\n') + '\n' + errors.join('\n'));
