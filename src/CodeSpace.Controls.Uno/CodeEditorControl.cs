@@ -14,7 +14,7 @@ using Windows.System;
 
 namespace CodeSpace.Controls.Uno;
 
-/// <summary>A custom-rendered editor. The tiny Uno TextBox is an input bridge, not the document or its renderer.</summary>
+/// <summary>A custom-rendered editor. The tiny Uno text input bridge never owns the document or its history.</summary>
 public sealed class CodeEditorControl : Grid, IDisposable
 {
     private sealed class EditorSurface(CodeEditorControl owner) : SKCanvasElement
@@ -22,7 +22,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
         protected override void RenderOverride(SKCanvas canvas, Size area) => owner.Renderer.Draw(canvas, new SKRect(0, 0, (float)area.Width, (float)area.Height), owner.Session, owner.Viewport);
     }
     private readonly EditorSurface _surface;
-    private readonly TextBox _input;
+    private readonly EditorInputBridge _input;
     private readonly DispatcherTimer _caret = new() { Interval = TimeSpan.FromMilliseconds(530) };
     private readonly DispatcherTimer _findTimer = new() { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly Border _findBox;
@@ -43,10 +43,9 @@ public sealed class CodeEditorControl : Grid, IDisposable
     {
         Session = session; Background = WorkbenchColors.Background;
         _surface = new EditorSurface(this); Children.Add(_surface);
-        _input = new TextBox { Width = 1, Height = 1, MinWidth = 0, MinHeight = 0, Opacity = 0.02, AcceptsReturn = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(0), BorderThickness = new Thickness(0), TabIndex = 0 };
+        _input = new EditorInputBridge { KeyProcessor = InputKeyDown, Width = 1, Height = 1, MinWidth = 0, MinHeight = 0, Opacity = 0.02, AcceptsReturn = true, IsSpellCheckEnabled = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(0), BorderThickness = new Thickness(0), TabIndex = 0 };
         AutomationProperties.SetName(_input, "Code editor input: " + session.File.Path); AutomationProperties.SetHelpText(_input, "Custom editor input. Full document screen-reader navigation is not yet implemented."); Children.Add(_input);
         _input.TextChanged += (_, _) => { if (_ignoreText || _input.Text.Length == 0) return; var text = _input.Text; _ignoreText = true; _input.Text = ""; _ignoreText = false; Session.Insert(text); };
-        _input.KeyDown += InputKeyDown;
         _input.GotFocus += (_, _) => { Viewport.Focused = true; Viewport.CaretVisible = true; _caret.Start(); _surface.Invalidate(); };
         _input.LostFocus += (_, _) => { Viewport.Focused = false; _caret.Stop(); _surface.Invalidate(); };
         _caret.Tick += (_, _) => { Viewport.CaretVisible = !Viewport.CaretVisible; _surface.Invalidate(); };
@@ -109,7 +108,11 @@ public sealed class CodeEditorControl : Grid, IDisposable
         Unloaded += (_, _) => { _caret.Stop(); _findTimer.Stop(); };
         SizeChanged += (_, _) => _surface.Invalidate();
     }
-    private static TextBox Input(string placeholder, double width) => new() { PlaceholderText = placeholder, Width = width, FontSize = 13, MinHeight = 27, Padding = new Thickness(5, 2, 5, 2), Background = WorkbenchColors.Brush("#313131"), Foreground = WorkbenchColors.Foreground, BorderBrush = WorkbenchColors.Brush("#454545"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0) };
+    private static TextBox Input(string placeholder, double width)
+    {
+        var input = new TextBox { PlaceholderText = placeholder, Width = width, FontSize = 13, MinHeight = 27, Padding = new Thickness(5, 2, 5, 2), Background = WorkbenchColors.Brush("#313131"), Foreground = WorkbenchColors.Foreground, BorderBrush = WorkbenchColors.Brush("#454545"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0) };
+        AutomationProperties.SetName(input, placeholder); return input;
+    }
     private void ScrollFromPointer(float y) { Viewport.ScrollY = Math.Max(0, y / Math.Max(1, ActualHeight) * Session.Buffer.LineCount * Viewport.LineHeight - ActualHeight / 2); _surface.Invalidate(); }
     public void FocusEditor() => _input.Focus(FocusState.Programmatic);
     public void InvalidateEditor() { Renderer.Invalidate(); _surface.Invalidate(); }
@@ -148,7 +151,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
         try { var content = Clipboard.GetContent(); if (content.Contains(StandardDataFormats.Text)) Session.Insert(await content.GetTextAsync()); }
         catch (Exception e) { Error?.Invoke(this, "Clipboard permission: " + e.Message); }
     }
-    private async void InputKeyDown(object sender, KeyRoutedEventArgs e)
+    private void InputKeyDown(KeyRoutedEventArgs e)
     {
         try
         {
@@ -158,12 +161,14 @@ public sealed class CodeEditorControl : Grid, IDisposable
                 switch (e.Key)
                 {
                     case VirtualKey.A: Session.SelectAll(); break;
-                    case VirtualKey.C: await CopyAsync(); break;
-                    case VirtualKey.X: await CopyAsync(true); break;
-                    case VirtualKey.V: await PasteAsync(); break;
+                    case VirtualKey.C: _ = CopyAsync(); break;
+                    case VirtualKey.X when shift: CommandRequested?.Invoke(this, "workbench.view.extensions"); break;
+                    case VirtualKey.X: _ = CopyAsync(true); break;
+                    case VirtualKey.V: _ = PasteAsync(); break;
                     case VirtualKey.Z: if (shift) Session.Redo(); else Session.Undo(); break;
                     case VirtualKey.Y: Session.Redo(); break;
                     case VirtualKey.D: Session.AddNextOccurrence(); break;
+                    case VirtualKey.E when shift: CommandRequested?.Invoke(this, "workbench.view.explorer"); break;
                     case VirtualKey.F: if (shift) CommandRequested?.Invoke(this, "workbench.action.findInFiles"); else ShowFind(); break;
                     case VirtualKey.H: ShowFind(true); break;
                     case VirtualKey.P: CommandRequested?.Invoke(this, shift ? "workbench.action.showCommands" : "workbench.action.quickOpen"); break;
@@ -212,6 +217,6 @@ public sealed class CodeEditorControl : Grid, IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; _caret.Stop(); _findTimer.Stop(); Session.Changed -= OnChanged; Session.SelectionChanged -= OnSelectionChanged; Renderer.Dispose();
+        if (_disposed) return; _disposed = true; _input.KeyProcessor = null; _caret.Stop(); _findTimer.Stop(); Session.Changed -= OnChanged; Session.SelectionChanged -= OnSelectionChanged; Renderer.Dispose();
     }
 }
