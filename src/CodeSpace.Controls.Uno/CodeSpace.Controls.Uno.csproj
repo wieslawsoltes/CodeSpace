@@ -1,0 +1,9 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CodeSpaceTargetFrameworks)' != ''">$(CodeSpaceTargetFrameworks)</TargetFrameworks>
+    <UnoSingleProject>true</UnoSingleProject><UnoFeatures>SkiaRenderer</UnoFeatures><OutputType>Library</OutputType><GenerateLibraryLayout>true</GenerateLibraryLayout>
+    <Description>Reusable custom Uno editor, explorer, activity bar, tabs, splitter and quick-pick controls.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../CodeSpace.Rendering.Skia/CodeSpace.Rendering.Skia.csproj" /><ProjectReference Include="../CodeSpace.Docking/CodeSpace.Docking.csproj" /></ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CodeSpaceTargetFrameworks)' != ''">$(CodeSpaceTargetFrameworks)</TargetFrameworks>
+    <OutputType>Exe</OutputType><UnoSingleProject>true</UnoSingleProject><UnoFeatures>SkiaRenderer</UnoFeatures>
+    <ApplicationTitle>CodeSpace</ApplicationTitle><ApplicationId>com.wieslawsoltes.codespace</ApplicationId>
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion><ApplicationVersion>1</ApplicationVersion>
+    <Description>Independent VS Code-style developer workbench with custom Uno Platform components.</Description>
+    <IsPackable>false</IsPackable><IsUiAutomationMappingEnabled>true</IsUiAutomationMappingEnabled>
+    <WasmShellMonoRuntimeExecutionMode>Interpreter</WasmShellMonoRuntimeExecutionMode><WasmShellEnableThreading>false</WasmShellEnableThreading>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../CodeSpace.Workbench.Uno/CodeSpace.Workbench.Uno.csproj" /></ItemGroup>
+</Project>
