@@ -9,7 +9,11 @@ namespace CodeSpace.App;
 internal sealed class WorkbenchPlatform : IWorkbenchPlatform
 {
     public bool IsBrowser => OperatingSystem.IsBrowser();
-    public IExtensionBridge? ExtensionBridge => null;
+#if __WASM__
+    public IExtensionBridge? ExtensionBridge { get; } = new BrowserExtensionBridge();
+#else
+    public IExtensionBridge? ExtensionBridge { get; } = new DesktopExtensionBridge();
+#endif
     public async Task<IReadOnlyList<ImportedFile>> PickFilesAsync(string extension = "*")
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
@@ -35,6 +39,10 @@ internal sealed class WorkbenchPlatform : IWorkbenchPlatform
     }
     public async Task SaveRecoveryAsync(string workspaceJson)
     {
-        var file = await ApplicationData.Current.LocalFolder.CreateFileAsync("codespace-recovery.json", CreationCollisionOption.ReplaceExisting); await FileIO.WriteTextAsync(file, workspaceJson);
+        var folder = ApplicationData.Current.LocalFolder;
+        // Write a separate file before replacing recovery, to avoid truncating the last backup on a failed write.
+        var temporary = await folder.CreateFileAsync("codespace-recovery.pending.json", CreationCollisionOption.ReplaceExisting);
+        await FileIO.WriteTextAsync(temporary, workspaceJson);
+        await temporary.RenameAsync("codespace-recovery.json", NameCollisionOption.ReplaceExisting);
     }
 }

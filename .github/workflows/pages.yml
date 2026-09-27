@@ -27,10 +27,28 @@ jobs:
           set -euo pipefail
           root=$(find artifacts/browser -type f -name index.html -printf '%h\n' | head -n 1)
           test -n "$root"
-          mkdir -p artifacts/site
+          mkdir -p artifacts/site/extension-host
           cp -a "$root"/. artifacts/site/
+          cp src/CodeSpace.ExtensionHost/*.mjs artifacts/site/extension-host/
           touch artifacts/site/.nojekyll
           printf '{"commit":"%s","version":"0.1.0"}\n' "$GITHUB_SHA" > artifacts/site/build-info.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test tools
+        run: npm install --no-save playwright@1.55.1 && npx playwright install --with-deps chromium
+      - name: Real Chromium interaction tests
+        shell: bash
+        run: |
+          python3 -m http.server 4173 --directory artifacts/site > /tmp/codespace-http.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          node tests/browser/smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-interaction-results
+          path: artifacts/browser-tests
       - uses: actions/upload-pages-artifact@v3
         with:
           path: artifacts/site

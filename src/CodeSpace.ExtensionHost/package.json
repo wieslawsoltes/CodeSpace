@@ -1,0 +1,12 @@
+{
+  "name": "@codespace/extension-host",
+  "version": "0.1.0",
+  "description": "Experimental VS Code API compatibility host for custom workbenches",
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": "./runtime.mjs", "./worker": "./worker.mjs", "./node": "./node-host.mjs" },
+  "files": ["*.mjs", "README.md", "LICENSE"],
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "engines": { "node": ">=22" },
+  "repository": { "type": "git", "url": "https://github.com/wieslawsoltes/CodeSpace", "directory": "src/CodeSpace.ExtensionHost" }
+}
