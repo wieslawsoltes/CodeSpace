@@ -53,7 +53,7 @@ def verify(folder: Path) -> list[dict]:
     host = hosts[0]
     with tarfile.open(host, 'r:gz') as archive:
         manifest = json.load(archive.extractfile('package/package.json'))
-        for name in ('runtime.mjs', 'worker.mjs', 'node-host.mjs', 'README.md', 'LICENSE'):
+        for name in ('runtime.mjs', 'api-types.mjs', 'worker.mjs', 'node-host.mjs', 'language-features.mjs', 'configuration.mjs', 'README.md', 'LICENSE'):
             if not archive.getmember('package/' + name).size:
                 raise ValueError('Empty extension host file: ' + name)
     if manifest.get('name') != '@codespace/extension-host' or manifest.get('license') != 'MIT':

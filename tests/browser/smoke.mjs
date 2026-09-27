@@ -21,8 +21,7 @@ async function clickAction(name) {
 async function enterQuickPick(query) {
   const input = page.getByRole('textbox', { name: 'Command palette input', exact: true });
   await input.waitFor({ state: 'attached' });
-  // Uno's accessibility textbox is a native input; fill dispatches its real input event
-  // atomically rather than racing initial focus with individual query characters.
+  // Native input events are used rather than a command execution test endpoint.
   await input.fill(query);
   await page.waitForFunction(value => [...document.querySelectorAll('input,textarea')].some(input => input.value === value), query);
   await page.waitForTimeout(300);
@@ -91,15 +90,56 @@ try {
   });
   await check('extension worker and UI RPC integration', async () => {
     await page.keyboard.press('F1'); await enterQuickPick('Run bundled compatibility probe');
-    // Dialog activation uses the application's accessibility Invoke action.
     await page.getByRole('button', { name: 'Run probe', exact: true }).dispatchEvent('click');
     await page.waitForFunction(() => __codespaceTestEvents.some(message => message.includes('Hello from the VS Code API compatibility probe.')), null, { timeout: 30000 });
     await page.waitForFunction(() => __codespaceTestEvents.some(message => message.includes('Executed codespace.hello')));
+  });
+  await check('fold and unfold operate on real visual rows', async () => {
+    await page.keyboard.press('F1'); await enterQuickPick('Editor: Fold All');
+    await page.waitForFunction(() => __codespaceTestState.editors.some(e => e.folds.length > 0));
+    await page.screenshot({ path: output + '/folding.png', fullPage: true });
+    await page.keyboard.press('F1'); await enterQuickPick('Editor: Unfold All');
+    await page.waitForFunction(() => __codespaceTestState.editors.every(e => e.folds.length === 0));
+  });
+  await check('extension completion inserts into the custom editor and undoes', async () => {
+    await page.mouse.click(1080, 140); await page.keyboard.press('Control+End');
+    const original = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
+    await page.keyboard.press('Control+Space'); await enterQuickPick('CodeSpaceProviderCompletion');
+    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('CodeSpaceProviderCompletion'));
+    await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, original);
+  });
+  await check('extension formatting is applied as one undoable transaction', async () => {
+    await page.keyboard.press('Control+End'); await page.keyboard.type('// format probe   ', { delay: 15 });
+    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// format probe   '));
+    const before = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
+    await page.keyboard.press('F1'); await enterQuickPick('Editor: Format Document');
+    await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// format probe'));
+    await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, before);
+  });
+  await check('extension hover and symbols reach real workbench controls', async () => {
+    await page.keyboard.press('F1'); await enterQuickPick('Editor: Show Hover');
+    await page.getByText('CodeSpace extension hover is connected to the custom Uno editor.', { exact: true }).waitFor({ state: 'attached' });
+    await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
+    await page.keyboard.press('F1'); await enterQuickPick('Go to Symbol in Editor');
+    await page.getByRole('button', { name: 'Extension symbol', exact: true }).waitFor({ state: 'attached' });
+    await page.keyboard.press('Escape');
+  });
+  await check('settings JSON binds live and survives malformed intermediate text', async () => {
+    await palette('.vscode/settings.json');
+    await page.mouse.click(1080, 140); await page.keyboard.press('Control+a');
+    await page.keyboard.insertText('{"editor.fontSize":18,"editor.tabSize":2,"editor.minimap.enabled":false}');
+    await page.waitForFunction(() => __codespaceTestState.options.FontSize === 18 && __codespaceTestState.options.TabSize === 2 && !__codespaceTestState.options.Minimap);
+    await page.keyboard.press('Control+End'); await page.keyboard.type('{');
+    await page.waitForFunction(() => __codespaceTestState.files['.vscode/settings.json'].endsWith('}{'));
+    assert.equal(await page.evaluate(() => __codespaceTestState.options.FontSize), 18);
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => __codespaceTestState.files['.vscode/settings.json'].endsWith('}'));
   });
   await check('recovery survives reload', async () => {
     await page.waitForTimeout(1800); await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!globalThis.__codespaceTestState, null, { timeout: 90000 });
     await page.waitForFunction(() => __codespaceTestState.groups.length === 2);
+    await page.waitForFunction(() => __codespaceTestState.options.FontSize === 18 && __codespaceTestState.editors.some(e => e.dirty));
   });
   console.log(JSON.stringify({ passed, pageErrors: errors }, null, 2));
   if (errors.length) throw new Error('Browser page errors: ' + errors.join('\n'));
