@@ -8,6 +8,7 @@ public readonly record struct TextRange(int Start, int Length)
     public int End => checked(Start + Length);
 }
 public readonly record struct TextEdit(int Start, int Length, string Text);
+public readonly record struct TextLineInfo(int Number, int Start, int Length, int EndIncludingBreak);
 public readonly record struct TextLine(int Number, int Start, int Length, int EndIncludingBreak, string Text);
 
 /// <summary>Persistent AVL rope. UTF-16 offsets, structurally shared snapshots, indexed line navigation.</summary>
@@ -50,7 +51,7 @@ public sealed class TextBuffer
     private static Node? Join(Node? left, Node? right)
     {
         if (left is null) return right; if (right is null) return left;
-        if (left.IsLeaf && right.IsLeaf && left.Source == right.Source && left.Start + left.Length == right.Start && left.Length + right.Length <= ChunkSize)
+        if (left.IsLeaf && right.IsLeaf && ReferenceEquals(left.Source, right.Source) && left.Start + left.Length == right.Start && left.Length + right.Length <= ChunkSize)
             return new Node(left.Source!, left.Start, left.Length + right.Length);
         if (left.Height > right.Height + 1) return Balance(new Node(left.Left!, Join(left.Right, right)!));
         if (right.Height > left.Height + 1) return Balance(new Node(Join(left, right.Left)!, right.Right!));
@@ -115,19 +116,25 @@ public sealed class TextBuffer
     }
     public string Slice(int start, int length)
     {
-        ValidateRange(start, length); var result = new StringBuilder(length); Append(_root, start, length, result); return result.ToString();
+        ValidateRange(start, length);
+        // Allocate only the destination string, not an intermediate StringBuilder buffer.
+        return string.Create(length, (Root: _root, Start: start), static (output, state) => Copy(state.Root, state.Start, output));
     }
-    private static void Append(Node? node, int start, int length, StringBuilder output)
+    public void CopyTo(int start, Span<char> destination)
     {
-        if (node is null || length == 0) return;
-        if (node.IsLeaf) { output.Append(node.Source, node.Start + start, length); return; }
+        ValidateRange(start, destination.Length); Copy(_root, start, destination);
+    }
+    private static void Copy(Node? node, int start, Span<char> output)
+    {
+        if (node is null || output.IsEmpty) return;
+        if (node.IsLeaf) { node.Source!.AsSpan(node.Start + start, output.Length).CopyTo(output); return; }
         var leftLength = node.Left!.Length;
         if (start < leftLength)
         {
-            var count = Math.Min(length, leftLength - start); Append(node.Left, start, count, output);
-            Append(node.Right, 0, length - count, output);
+            var count = Math.Min(output.Length, leftLength - start);
+            Copy(node.Left, start, output[..count]); Copy(node.Right, 0, output[count..]);
         }
-        else Append(node.Right, start - leftLength, length, output);
+        else Copy(node.Right, start - leftLength, output);
     }
     private int BreakOffset(int index)
     {
@@ -157,11 +164,17 @@ public sealed class TextBuffer
         if ((uint)line >= (uint)LineCount) throw new ArgumentOutOfRangeException(nameof(line));
         return line == 0 ? 0 : BreakOffset(line - 1) + 1;
     }
-    public TextLine GetLine(int line)
+    /// <summary>Allocation-free line bounds. Prefer this for navigation, minimaps and viewport bookkeeping.</summary>
+    public TextLineInfo GetLineInfo(int line)
     {
         var start = GetLineStart(line); var next = line + 1 < LineCount ? GetLineStart(line + 1) : Length;
         var end = next; if (end > start && this[end - 1] == '\n') end--; if (end > start && this[end - 1] == '\r') end--;
-        return new TextLine(line, start, end - start, next, Slice(start, end - start));
+        return new TextLineInfo(line, start, end - start, next);
+    }
+    public TextLine GetLine(int line)
+    {
+        var info = GetLineInfo(line);
+        return new TextLine(line, info.Start, info.Length, info.EndIncludingBreak, Slice(info.Start, info.Length));
     }
     public TextPosition PositionAt(int offset)
     {
@@ -170,7 +183,7 @@ public sealed class TextBuffer
     }
     public int OffsetAt(TextPosition position)
     {
-        var line = GetLine(Math.Clamp(position.Line, 0, LineCount - 1)); return line.Start + Math.Clamp(position.Character, 0, line.Length);
+        var line = GetLineInfo(Math.Clamp(position.Line, 0, LineCount - 1)); return line.Start + Math.Clamp(position.Character, 0, line.Length);
     }
     public override string ToString() => Slice(0, Length);
     private void ValidateRange(int start, int length)
