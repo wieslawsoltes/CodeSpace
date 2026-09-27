@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Editor/CodeSpace.Editor.csproj" /><ProjectReference Include="../CodeSpace.Languages/CodeSpace.Languages.csproj" /><PackageReference Include="SkiaSharp" Version="3.119.2" /></ItemGroup></Project>

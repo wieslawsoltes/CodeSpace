@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodeSpace.Core/CodeSpace.Core.csproj" />
+    <Project Path="src/CodeSpace.Editor/CodeSpace.Editor.csproj" />
+    <Project Path="src/CodeSpace.Docking/CodeSpace.Docking.csproj" />
+    <Project Path="src/CodeSpace.Languages/CodeSpace.Languages.csproj" />
+    <Project Path="src/CodeSpace.Extensions/CodeSpace.Extensions.csproj" />
+    <Project Path="src/CodeSpace.Rendering.Skia/CodeSpace.Rendering.Skia.csproj" />
+  </Folder>
+  <Folder Name="/tests/"><Project Path="tests/CodeSpace.Tests/CodeSpace.Tests.csproj" /></Folder>
+</Solution>
