@@ -21,12 +21,32 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj') }}
-          restore-keys: ${{ runner.os }}-nuget-
+          key: ${{ runner.os }}-nuget-browser-${{ hashFiles('global.json', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-browser-
+            ${{ runner.os }}-nuget-
+      - name: Compute application cache key
+        id: app-key
+        shell: bash
+        run: |
+          digest=$(git ls-files -z src global.json Directory.Build.props | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
+          sdk=$(dotnet --version)
+          echo "key=${RUNNER_OS}-codespace-browser-v1-${sdk}-${digest}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: compiled
+        with:
+          path: artifacts/browser
+          key: ${{ steps.app-key.outputs.key }}
       - name: Install WebAssembly build tools
         run: dotnet workload install wasm-tools --skip-manifest-update
       - name: Publish Uno browser app
+        if: steps.compiled.outputs.cache-hit != 'true'
         run: dotnet publish src/CodeSpace.App -f net10.0-browserwasm -c Release -p:CodeSpaceTargetFrameworks=net10.0-browserwasm -p:WasmShellWebAppBasePath=/CodeSpace/ -o artifacts/browser
+      - uses: actions/cache/save@v4
+        if: steps.compiled.outputs.cache-hit != 'true'
+        with:
+          path: artifacts/browser
+          key: ${{ steps.app-key.outputs.key }}
       - name: Stage static site and source archive
         run: |
           python3 tools/prepare-pages.py artifacts/browser artifacts/site
