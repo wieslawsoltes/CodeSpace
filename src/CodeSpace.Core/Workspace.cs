@@ -11,7 +11,12 @@ public sealed class WorkspaceFile
     public TextBuffer SavedBuffer { get; private set; }
     public bool IsDirty => !ReferenceEquals(Buffer, SavedBuffer);
     public WorkspaceFile(string path, string text) { Path = Workspace.NormalizePath(path); Buffer = new TextBuffer(text); SavedBuffer = Buffer; SavedText = text; }
-    public void MarkSaved() { SavedText = Buffer.ToString(); SavedBuffer = Buffer; }
+    public void MarkSaved() => MarkSaved(Buffer);
+    public void MarkSaved(TextBuffer snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        SavedText = snapshot.ToString(); SavedBuffer = snapshot;
+    }
 }
 public sealed record SearchHit(string Path, int Line, int Column, int Length, string Preview);
 public sealed record WorkspaceSnapshot(int SchemaVersion, string Name, Dictionary<string, string> Files);

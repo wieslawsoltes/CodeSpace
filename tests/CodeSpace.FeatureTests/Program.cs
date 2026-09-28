@@ -104,6 +104,7 @@ Test("folded renderer hit testing maps visual rows to document lines", () => {
     var viewport = new EditorViewport(); viewport.Folding.Collapse(0, 2);
     Equal(6, renderer.HitTest(session, viewport, viewport.GutterWidth, 8 + viewport.LineHeight + 2));
 });
+ContinuationTests.Run(Test, metrics);
 var output = Environment.GetEnvironmentVariable("CODESPACE_METRICS_PATH") ?? "artifacts/performance.json";
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
 File.WriteAllText(output, JsonSerializer.Serialize(new { testsPassed = passed, runner = Environment.OSVersion.ToString(), note = "CPU/raster measurements, not physical-GPU timings. Scalar reference and batched path run in the same process.", metrics }, new JsonSerializerOptions { WriteIndented = true }));

@@ -24,13 +24,16 @@ public sealed partial class WorkbenchView
     }
     private async Task SaveFileAsync(EditorSession session)
     {
-        await _platform.SaveFileAsync(Path.GetFileName(session.File.Path), Encoding.UTF8.GetBytes(session.Buffer.ToString())); session.MarkSaved(); RefreshTabs(); QueueRecovery(); Notify("Saved " + session.File.Path);
+        // Edits made while the platform picker/write is pending remain dirty.
+        var snapshot = session.Buffer;
+        await _platform.SaveFileAsync(Path.GetFileName(session.File.Path), Encoding.UTF8.GetBytes(snapshot.ToString()));
+        session.MarkSaved(snapshot); RefreshTabs(); QueueRecovery(); Notify("Saved " + session.File.Path);
     }
     private async Task ImportWorkspaceAsync()
     {
         var files = await _platform.PickFilesAsync(".json"); if (files.Count == 0) return; var workspace = Workspace.Deserialize(Encoding.UTF8.GetString(files[0].Bytes));
         var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "Replace the current workspace?", Content = "Export a backup first. Import replaces the current virtual files, open editors and local recovery.", PrimaryButtonText = "Replace workspace", CloseButtonText = "Cancel" };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) { ReplaceWorkspace(workspace); QueueRecovery(); Notify("Imported workspace " + workspace.Name); }
+        if (await ShowWorkbenchDialogAsync(dialog) == ContentDialogResult.Primary) { ReplaceWorkspace(workspace); QueueRecovery(); Notify("Imported workspace " + workspace.Name); }
     }
     private void ReplaceWorkspace(Workspace workspace)
     {
@@ -40,9 +43,12 @@ public sealed partial class WorkbenchView
     }
     private void WorkspaceChanged(object? sender, EventArgs e) { RefreshConfiguration(); QueueRecovery(); QueueExtensionDocumentSync(); }
     private void QueueRecovery() { if (_restoring || _disposed) return; _recoveryTimer.Stop(); _recoveryTimer.Start(); }
+    private readonly SemaphoreSlim _recoveryWrites = new(1, 1);
     private async Task SaveRecoveryAsync()
     {
+        await _recoveryWrites.WaitAsync();
         try { await _platform.SaveRecoveryAsync(JsonSerializer.Serialize(new { workspace = _workspace.Serialize(), layout = _layout.Serialize(), savedBaselines = _workspace.Files.Values.Where(f => f.IsDirty).ToDictionary(f => f.Path, f => f.SavedText), userSettings = _configuration.User, selections = _sessions.ToDictionary(p => p.Key, p => p.Value.Selections.ToArray()), views = CaptureViews(), schemaVersion = 2 })); }
         catch (Exception error) { Notify("Local recovery failed; export a backup: " + error.Message); }
+        finally { _recoveryWrites.Release(); }
     }
 }

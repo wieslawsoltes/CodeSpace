@@ -97,7 +97,7 @@ public sealed partial class WorkbenchView
         if (_sessions.TryGetValue(path, out var existing)) return existing;
         var session = new EditorSession(_workspace.Files[path]); _sessions[path] = session;
         session.Changed += (_, _) => { if (path == ".vscode/settings.json") RefreshConfiguration(); QueueRecovery(); _refreshTimer.Stop(); _refreshTimer.Start(); QueueExtensionDocumentSync(); };
-        session.SelectionChanged += (_, _) => QueueDocumentSync();
+        session.SelectionChanged += (_, _) => { QueueDocumentSync(); QueueRecovery(); };
         return session;
     }
     public void Open(string path, int? line = null, int character = 0)
@@ -117,7 +117,7 @@ public sealed partial class WorkbenchView
         if (_sessions.TryGetValue(path, out var session) && session.IsDirty && _layout.Groups.Count(g => g.Tabs.Contains(path)) <= 1)
         {
             var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "Save changes to " + Path.GetFileName(path) + "?", Content = "Unsaved changes will remain in local recovery until replaced, but closing without saving is not an export.", PrimaryButtonText = "Save", SecondaryButtonText = "Close without export", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
-            var result = await dialog.ShowAsync(); if (result == ContentDialogResult.None) return; if (result == ContentDialogResult.Primary) await SaveFileAsync(session);
+            var result = await ShowWorkbenchDialogAsync(dialog); if (result == ContentDialogResult.None) return; if (result == ContentDialogResult.Primary) await SaveFileAsync(session);
         }
         _layout.Close(path, group);
     }

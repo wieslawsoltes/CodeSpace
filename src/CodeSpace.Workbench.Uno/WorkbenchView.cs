@@ -94,7 +94,7 @@ public sealed partial class WorkbenchView : Grid, IDisposable
                     {
                         try { _layout.Restore(layout.GetString()!); } catch (Exception error) { Log("Layout recovery skipped: " + error.Message); }
                     }
-                    _restoring = false; RenderDock(); RestoreSelections(root); RefreshConfiguration(); Log("Recovered local workspace. Export a backup before clearing browser data.");
+                    RestoreSelections(root); RenderDock(); _restoring = false; RefreshConfiguration(); Log("Recovered local workspace. Export a backup before clearing browser data.");
                 }
             }
         }

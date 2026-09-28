@@ -29,8 +29,17 @@ public sealed class EditorTheme
 }
 public sealed class EditorViewport
 {
-    public double ScrollY { get; set; }
-    public double ScrollX { get; set; }
+    private double _scrollY, _scrollX;
+    public event EventHandler? ViewChanged;
+    public EditorViewport() => Folding.Changed += (_, _) => ViewChanged?.Invoke(this, EventArgs.Empty);
+    public double ScrollY { get => _scrollY; set => SetScroll(ref _scrollY, value); }
+    public double ScrollX { get => _scrollX; set => SetScroll(ref _scrollX, value); }
+    private void SetScroll(ref double field, double value)
+    {
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        value = Math.Max(0, value); if (field == value) return;
+        field = value; ViewChanged?.Invoke(this, EventArgs.Empty);
+    }
     public float FontSize { get; set; } = 14;
     public float LineHeight => FontSize * 1.55f;
     public bool ShowMinimap { get; set; } = true;
@@ -70,7 +79,7 @@ public sealed partial class EditorRenderer : IDisposable
     private TextBuffer? _minimapBuffer;
     private float[] _minimap = [];
     private EditorSession? _session;
-    private SyntaxDocument? _syntax;
+    private IncrementalSyntaxDocument? _syntax;
     public static SKTypeface? DefaultTypeface { get; set; }
     public EditorTheme Theme { get; set; } = new();
     public RenderMetrics Metrics { get; private set; } = new(0, 0, 0, 0);
@@ -80,7 +89,7 @@ public sealed partial class EditorRenderer : IDisposable
         if (!ReferenceEquals(_session, session))
         {
             if (_session is not null) _session.Changed -= Changed;
-            _session = session; _syntax = new SyntaxDocument(session.File.Path); ClearCache(); session.Changed += Changed;
+            _session = session; _syntax = new IncrementalSyntaxDocument(session.File.Path); ClearCache(); session.Changed += Changed;
         }
         if (_font is null || _lastSize != view.FontSize || _lastTabSize != session.TabSize)
         {
@@ -92,15 +101,25 @@ public sealed partial class EditorRenderer : IDisposable
     }
     private void Changed(object? sender, DocumentChangedEventArgs e)
     {
-        _syntax?.Invalidate(e.FirstChangedLine);
-        foreach (var key in _cache.Keys.Where(k => k >= e.FirstChangedLine).ToArray()) { _cache[key].Dispose(); _cache.Remove(key); }
+        var stable = e.PreviousBuffer is not null && e.Edits is { Count: > 0 } &&
+            _syntax?.InvalidateEdits(e.PreviousBuffer, e.Edits) == true;
+        if (!stable) _syntax?.Invalidate(e.FirstChangedLine);
+        var last = stable ? e.Edits!.Max(edit => e.PreviousBuffer!.PositionAt(edit.Start + edit.Length).Line) : int.MaxValue;
+        foreach (var key in _cache.Keys.Where(k => k >= e.FirstChangedLine && k <= last).ToArray())
+        { _cache[key].Dispose(); _cache.Remove(key); }
         _minimapBuffer = null;
     }
     private void ClearCache() { foreach (var line in _cache.Values) line.Dispose(); _cache.Clear(); }
     public void Invalidate() { ClearCache(); _font?.Dispose(); _font = null; }
     private LineLayout Layout(EditorSession session, int line, EditorViewport view)
     {
-        Bind(session, view); if (_cache.TryGetValue(line, out var cached)) return cached;
+        Bind(session, view);
+        var tokens = _syntax!.GetLine(session.Buffer, line).Tokens;
+        if (_cache.TryGetValue(line, out var cached))
+        {
+            if (ReferenceEquals(cached.Tokens, tokens)) return cached;
+            cached.Dispose(); _cache.Remove(line);
+        }
         var text = session.Buffer.GetLine(line).Text; var glyphs = new List<Glyph>(); var x = 0f;
         var space = Math.Max(1, _asciiWidths[32]); var tab = space * session.TabSize;
         var asciiOnly = true;
@@ -114,7 +133,6 @@ public sealed partial class EditorRenderer : IDisposable
             var width = glyph == "\t" ? tab - x % tab : Math.Max(space * 0.25f, simple && ch >= 32 && ch < 127 ? _asciiWidths[ch] : _font!.MeasureText(glyph));
             glyphs.Add(new(glyph, offset, length, x, width)); x += width; offset += length;
         }
-        var tokens = _syntax!.GetLine(session.Buffer, line).Tokens;
         TextBatch[]? batches = null;
         if (asciiOnly && glyphs.Count > 0)
         {

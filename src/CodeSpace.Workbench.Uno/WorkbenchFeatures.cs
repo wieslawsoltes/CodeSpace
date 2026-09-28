@@ -32,6 +32,7 @@ public sealed partial class WorkbenchView
     private void RestoreView(CodeEditorControl editor, string group)
     {
         var key = group + "\n" + editor.Session.File.Path; _viewKeys[editor] = key;
+        editor.Viewport.ViewChanged += (_, _) => QueueRecovery();
         if (!_viewStates.TryGetValue(key, out var view)) return;
         editor.Viewport.ScrollX = double.IsFinite(view.ScrollX) ? Math.Max(0, view.ScrollX) : 0;
         editor.Viewport.ScrollY = double.IsFinite(view.ScrollY) ? Math.Max(0, view.ScrollY) : 0;
@@ -40,7 +41,7 @@ public sealed partial class WorkbenchView
     }
     public EditorOptions EditorOptions => _configuration.Options;
     public object EditorDiagnostics => _editors.Select(e => new {
-        path = e.Session.File.Path, visibleLines = e.Viewport.Folding.VisibleLineCount(e.Session.Buffer.LineCount),
+        path = e.Session.File.Path, group = _viewKeys.GetValueOrDefault(e)?.Split('\n')[0], scrollX = e.Viewport.ScrollX, scrollY = e.Viewport.ScrollY, selection = e.Session.Primary, visibleLines = e.Viewport.Folding.VisibleLineCount(e.Session.Buffer.LineCount),
         folds = e.Viewport.Folding.Regions.ToArray(), cpuPaintMs = e.Renderer.Metrics.CpuMilliseconds,
         textDrawCalls = e.Renderer.Metrics.TextDrawCalls, layoutBuilds = e.Renderer.Metrics.LayoutBuilds,
         cachedLines = e.Renderer.Metrics.CachedLines, dirty = e.Session.IsDirty

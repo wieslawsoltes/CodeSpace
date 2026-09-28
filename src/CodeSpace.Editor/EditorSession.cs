@@ -47,7 +47,13 @@ public sealed class EditorSession
         var first = file.Buffer.GetLineInfo(0);
         Eol = first.EndIncludingBreak - first.Length == 2 ? "\r\n" : "\n";
     }
-    public void MarkSaved() { File.MarkSaved(); _savedBuffer = Buffer; SelectionChanged?.Invoke(this, EventArgs.Empty); }
+    public void MarkSaved() => MarkSaved(Buffer);
+    public void MarkSaved(TextBuffer snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        File.MarkSaved(snapshot); _savedBuffer = File.SavedBuffer;
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
     public void Select(int anchor, int active, bool add = false)
     {
         var selection = new Selection(Math.Clamp(anchor, 0, Buffer.Length), Math.Clamp(active, 0, Buffer.Length));
@@ -93,7 +99,7 @@ public sealed class EditorSession
     }
     private void Notify(int firstLine, TextBuffer? previous = null, IReadOnlyList<TextEdit>? edits = null)
     {
-        // Dirty tracking is a structural snapshot comparison: never flatten the document on a keystroke.
+        // Dirty tracking never flattens the document on a keystroke.
         Version++; Changed?.Invoke(this, new DocumentChangedEventArgs(firstLine, Version, previous, edits)); SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
     public void Insert(string text) => ReplaceSelections(_ => text);
@@ -128,7 +134,7 @@ public sealed class EditorSession
     public void Delete(bool backward)
     {
         var expanded = Normalize(_selections.Select(s => s.Length != 0 ? s : backward ? new Selection(PreviousGrapheme(s.Active), s.Active) : new Selection(s.Active, NextGrapheme(s.Active))));
-        // Preserve the original caret(s) in the undo snapshot, not the temporary deletion ranges.
+        // Preserve original carets in the undo snapshot, not temporary deletion ranges.
         Apply(expanded.Where(s => s.Length != 0).Select(s => new TextEdit(s.Start, s.Length, "")));
     }
     public int PreviousGrapheme(int offset)

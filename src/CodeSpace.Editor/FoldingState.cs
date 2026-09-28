@@ -9,22 +9,25 @@ public sealed class FoldingState
     private readonly List<(int Start, int End, int RemovedBefore)> _hidden = [];
     private int _lineCount = -1, _removed;
     public int Revision { get; private set; }
+    public event EventHandler? Changed;
     public IEnumerable<CollapsedRegion> Regions => _collapsed.Select(p => new CollapsedRegion(p.Key, p.Value));
     public bool IsCollapsed(int startLine) => _collapsed.ContainsKey(startLine);
     public void Collapse(int startLine, int endLine)
     {
         if (startLine < 0 || endLine <= startLine) throw new ArgumentOutOfRangeException(nameof(endLine));
+        if (_collapsed.TryGetValue(startLine, out var existing) && existing == endLine) return;
         _collapsed[startLine] = endLine; Invalidate();
     }
     public void Expand(int startLine) { if (_collapsed.Remove(startLine)) Invalidate(); }
     public void Clear() { if (_collapsed.Count == 0) return; _collapsed.Clear(); Invalidate(); }
     public void Reveal(int line)
     {
+        if (_collapsed.Count == 0) return;
         var removed = false;
         foreach (var pair in _collapsed.Where(p => p.Key < line && p.Value >= line).ToArray()) removed |= _collapsed.Remove(pair.Key);
         if (removed) Invalidate();
     }
-    private void Invalidate() { _lineCount = -1; Revision++; }
+    private void Invalidate() { _lineCount = -1; Revision++; Changed?.Invoke(this, EventArgs.Empty); }
     private void Build(int lineCount)
     {
         if (lineCount < 1) throw new ArgumentOutOfRangeException(nameof(lineCount));
