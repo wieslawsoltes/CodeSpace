@@ -61,7 +61,7 @@ public sealed partial class WorkbenchView
         // Plain text, never executable HTML or trusted Markdown command links.
         var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "Hover", Content = new ScrollViewer { MaxHeight = 400,
             Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true } }, CloseButtonText = "Close" };
-        await dialog.ShowAsync();
+        await ShowWorkbenchDialogAsync(dialog);
     }
     private async Task ShowDefinitionAsync()
     {

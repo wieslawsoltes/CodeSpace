@@ -24,7 +24,7 @@ internal sealed class BrowserDiagnostics
                 groups = workbench.Docking.Groups.Select(g => new { id = g.Id, tabs = g.Tabs, activeTab = g.ActiveTab }),
                 sidebarVisible = workbench.Docking.State.SideBarVisible,
                 panelVisible = workbench.Docking.State.PanelVisible,
-                options = workbench.EditorOptions, editors = workbench.EditorDiagnostics
+                options = workbench.EditorOptions, editors = workbench.EditorDiagnostics, interaction = workbench.InteractionDiagnostics
             });
             Uno.Foundation.WebAssemblyRuntime.InvokeJS("globalThis.__codespaceTestState = JSON.parse(" + JsonSerializer.Serialize(state) + "); 'updated'");
         }

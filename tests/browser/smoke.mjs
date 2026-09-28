@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const output = process.env.OUTPUT_DIR ?? 'artifacts/browser-tests';
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader', '--disable-dev-shm-usage'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH, headless: true, args: ['--enable-unsafe-swiftshader', '--disable-dev-shm-usage'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const messages = [], errors = [];
 page.on('console', message => { const text = message.type() + ': ' + message.text(); messages.push(text); if (text.includes('[CodeSpace]')) console.log(text); });
@@ -20,13 +20,13 @@ async function clickAction(name) {
     if (bounds && bounds.width > 0 && bounds.height > 0) {
       await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); return;
     }
-    // Uno's automation peer can appear before its first layout pass.
     await page.waitForTimeout(50);
   }
   assert.fail('Missing rendered control bounds: ' + name);
 }
 async function enterQuickPick(query) {
   const input = page.getByRole('textbox', { name: 'Command palette input', exact: true });
+  await page.waitForFunction(() => __codespaceTestState.interaction.quickPickReady);
   await input.waitFor({ state: 'attached' }); await input.fill(query);
   await page.waitForFunction(value => [...document.querySelectorAll('input,textarea')].some(input => input.value === value), query);
   await page.waitForTimeout(300);
@@ -113,14 +113,17 @@ try {
     await command('Editor: Format Document'); await page.waitForFunction(() => __codespaceTestState.files['src/Workbench.cs'].endsWith('// format probe'));
     await page.keyboard.press('Control+z'); await page.waitForFunction(text => __codespaceTestState.files['src/Workbench.cs'] === text, before);
   });
-  await check('extension hover and symbols reach real workbench controls', async () => {
+  await check('extension hover and symbols reach real workbench controls without changing text', async () => {
     await command('Editor: Show Hover');
     await page.getByLabel('CodeSpace extension hover is connected to the custom Uno editor.', { exact: true }).waitFor({ state: 'attached' });
     await page.screenshot({ path: output + '/extension-hover.png', fullPage: true });
     await page.getByRole('button', { name: 'Close', exact: true }).dispatchEvent('click');
+    await page.waitForFunction(() => !__codespaceTestState.interaction.modalOpen);
+    const beforeSymbols = await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']);
     await command('Go to Symbol in Editor');
     await page.getByRole('button', { name: 'Extension symbol', exact: true }).waitFor({ state: 'attached' });
     await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => __codespaceTestState.files['src/Workbench.cs']), beforeSymbols, 'Modal/palette transitions must never type into the document');
   });
   await check('settings JSON binds live and survives malformed intermediate text', async () => {
     await palette('.vscode/settings.json');
