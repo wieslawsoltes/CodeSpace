@@ -69,7 +69,11 @@ The bundled standard-API fixture verifies activation, commands, notifications an
 
 ## Rendering qualification
 
-The positioned-text fast path batches ASCII glyphs with cached advances and retains a scalar path for other text. CI compares raster pixels and draw calls between both paths, with runner measurements retained as artifacts. This does not supply contextual Unicode shaping, bidi or a new GPU backend. Lexer caches still grow with scanned prefixes; huge-file cold lexing and extraordinarily long rendered lines need further work. Folding clears conservatively after edits and is rebuilt automatically for smaller files or explicitly by commands. See [performance.md](performance.md) for measured scope.
+The positioned-text fast path batches ASCII glyphs with cached advances and retains a scalar path for other text. CI compares raster pixels and draw calls between both paths, with runner measurements retained as artifacts. This does not supply contextual Unicode shaping, bidi or a new GPU backend. For line-preserving edits, an incremental lexer reuses unchanged suffixes after lexical-state convergence; newline/history changes invalidate conservatively. Lexer caches still grow with scanned prefixes; huge-file cold lexing and extraordinarily long rendered lines need further work. Folding clears conservatively after edits and is rebuilt automatically for smaller files or explicitly by commands. See [performance.md](performance.md) for measured scope.
+
+## Save and recovery semantics
+
+Caret, fold and scroll changes schedule recovery even without text edits. Selections restore before the final viewport restoration, avoiding caret-visibility logic overwriting a deliberately scrolled view. Recovery writes are serialized to prevent overlapping writes to the same backing file. Explicit file saves mark the captured buffer snapshot as saved: changes made while a picker or write is pending remain dirty. Recovery still serializes the full virtual workspace, is subject to browser quota, and is not crash-proof backup or continuous cloud storage.
 
 ## Next parity milestones
 

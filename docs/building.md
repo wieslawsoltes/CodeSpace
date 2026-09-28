@@ -37,15 +37,18 @@ Open http://localhost:4173/CodeSpace/ rather than file://. Omit the base-path pr
 npm install --no-save playwright@1.55.1
 npx playwright install --with-deps chromium
 BASE_URL=http://127.0.0.1:4173/CodeSpace/ node tests/browser/smoke.mjs
+BASE_URL=http://127.0.0.1:4173/CodeSpace/ node tests/browser/view-recovery.mjs
 ```
 
 The suite exercises startup, quick-open, typing/Undo, selection/deletion/Redo, multi-cursor edits, split groups, sidebar toggles, trusted worker execution and recovery. Additional workflows exercise folding, extension completion insertion/Undo, formatting/Undo, hover/symbol controls, valid/invalid live settings and dirty/settings recovery.
 
 Pointer/keyboard input and native input events drive the actual workbench. Trust buttons use their accessibility invocation. Read-only state verifies outcomes rather than assuming a click succeeded. Screenshots, logs and failures are retained under artifacts/browser-tests. Diagnostic mode ?e2e=1 exposes document snapshots; do not use it with sensitive content. Headless SwiftShader is not physical-GPU qualification.
 
+The main browser suite has fourteen workflow checks, including a hover-dialog-to-symbol-picker regression that asserts the command query never enters the document. A separate fresh-context recovery suite has four checks: caret-only persistence, fold-only persistence, scroll-only persistence without text edits, and restoring those states together after reload. It waits for the saved data rather than using a fixed autosave delay. Full IME, screen-reader and hardware-GPU qualification remain separate.
+
 ## Engine and host tests
 
-The C# suites cover core regression, 10,000 seeded rope differential edits, VSIX/RPC/language behavior, atomic multi-file validation/version/observer behavior, rectangular selections, folding-map differential tests, JSONC settings, allocation-free navigation and reference raster comparisons. FeatureTests writes artifacts/performance.json; workflows retain it. Timings describe CPU/raster work only.
+The C# suites cover core regression, 10,000 seeded rope differential edits, VSIX/RPC/language behavior, atomic multi-file validation/version/observer behavior, rectangular selections, folding-map differential tests, JSONC settings, allocation-free navigation and reference raster comparisons. The continuation adds eight tests for incremental lexical convergence, queued edits, 300 randomized lexical edits, retained-layout raster equivalence, viewport notifications and captured-save baselines. FeatureTests writes artifacts/performance.json; workflows retain it. Timings describe CPU/raster work only.
 
 The independent host tests cover API values, activation, module loading, provider selection/cancellation/stale results, diagnostic ownership, configuration precedence/events and changed-document synchronization. Seven browser platform contracts exercise production modifier handling; three subprocess tests launch the actual Node host and test activation/UI ordering, UTF-16/versioned edits, disposal and explicit trust. The platform-contracts runner imports those three tests; do not count them twice.
 

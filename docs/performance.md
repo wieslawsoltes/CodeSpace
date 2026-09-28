@@ -22,6 +22,24 @@ Line bounds and position lookup use cached rope metadata without allocating stri
 
 Extension synchronization now sends changed-document snapshots rather than reserializing every document after each request. A live timer runs only after explicit host activation. Unchanged JS document indexes and editor adapters are reused. This transport improvement is covered by behavior tests, not a reported throughput benchmark.
 
+## Incremental typing validation
+
+The continuation at commit `ef44fc017ad3ab79bfcbb866ad7c6028dfff9ec3` adds `IncrementalSyntaxDocument`. It retains token arrays after line-preserving edits and re-tokenizes only until outgoing lexer state converges. The renderer retains positioned glyph layouts for unchanged lines. Newline edits and Undo/Redo retain conservative suffix invalidation; a multiline comment edit propagates as far as its lexical state requires. This is not an assertion that all edits are constant-time.
+
+The [engine run 36384232954](https://github.com/wieslawsoltes/CodeSpace/actions/runs/36384232954) produced:
+
+| Measurement | Reference | Incremental result |
+|---|---:|---:|
+| Layout builds for 100 single-line edits and redraws | 3,500 with explicit full layout invalidation on every edit | **100** |
+| Re-tokenized lines after one line-preserving edit in a warm 10,000-line prefix | Full-prefix scan would visit 10,000 lines | **1** |
+| Raster text calls per frame | 2,450 scalar calls | 630 batched calls |
+| CPU raster time for 100 repeated frames in this run | 705.3489 ms | 70.709 ms |
+| Scalar/batched differing pixels | Reference image | **0 / 770,000** |
+
+The layout counts are measured with both paths in the same process, not extrapolated from different machines. The lexical reference count is the size of the cached prefix; the test measures the incremental count and verifies every resulting token against a fresh lexer. Separate tests compare cached rendering with newly constructed renderers after ordinary typing, an opening block comment, and Undo. A seeded 300-edit differential test includes queued edits, line breaks, quotes and comments to check invalidation correctness.
+
+Single-line changes also update dirty indicators in place rather than replacing tab strips. Browser checks assert the split-button identity survives typing/Undo. These changes avoid unnecessary UI reconstruction; no additional whole-workbench timing ratio is inferred from them.
+
 ## Limits
 
 No physical-GPU timing, power, full-frame input latency, whole-application comparison against VS Code, or fastest-renderer claim is established. Unicode text still uses the cluster path; complete shaping, bidi and font fallback remain work. Very long lines, cold distant lexical jumps, large search result sets and full-workspace recovery serialization remain optimization targets. The scalar switch is retained as a regression reference, not a second UI implementation.
