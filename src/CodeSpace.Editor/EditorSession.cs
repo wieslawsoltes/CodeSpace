@@ -11,10 +11,12 @@ public readonly record struct Selection(int Anchor, int Active)
     public int Length => End - Start;
 }
 public sealed record EditorSnapshot(TextBuffer Buffer, Selection[] Selections);
-public sealed class DocumentChangedEventArgs(int firstChangedLine, long version) : EventArgs
+public sealed class DocumentChangedEventArgs(int firstChangedLine, long version, TextBuffer? previousBuffer = null, IReadOnlyList<TextEdit>? edits = null) : EventArgs
 {
     public int FirstChangedLine { get; } = firstChangedLine;
     public long Version { get; } = version;
+    public TextBuffer? PreviousBuffer { get; } = previousBuffer;
+    public IReadOnlyList<TextEdit>? Edits { get; } = edits;
 }
 public enum CursorMove { Left, Right, Up, Down, Home, End, DocumentStart, DocumentEnd, PageUp, PageDown }
 
@@ -41,15 +43,34 @@ public sealed class EditorSession
     public event EventHandler? SelectionChanged;
     public EditorSession(WorkspaceFile file)
     {
-        File = file; var text = file.Buffer.ToString();
-        _savedBuffer = string.Equals(text, file.SavedText, StringComparison.Ordinal) ? file.Buffer : new TextBuffer(file.SavedText);
-        Eol = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        File = file; _savedBuffer = file.SavedBuffer;
+        var first = file.Buffer.GetLineInfo(0);
+        Eol = first.EndIncludingBreak - first.Length == 2 ? "\r\n" : "\n";
     }
-    public void MarkSaved() { File.MarkSaved(); _savedBuffer = Buffer; SelectionChanged?.Invoke(this, EventArgs.Empty); }
+    public void MarkSaved() => MarkSaved(Buffer);
+    public void MarkSaved(TextBuffer snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        File.MarkSaved(snapshot); _savedBuffer = File.SavedBuffer;
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
     public void Select(int anchor, int active, bool add = false)
     {
         var selection = new Selection(Math.Clamp(anchor, 0, Buffer.Length), Math.Clamp(active, 0, Buffer.Length));
         _selections = add ? Normalize(_selections.Append(selection)) : [selection]; _preferredColumn = null; SelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
+    public void SetSelections(IEnumerable<Selection> selections)
+    {
+        ArgumentNullException.ThrowIfNull(selections);
+        _selections = Normalize(selections.Select(s => new Selection(Math.Clamp(s.Anchor, 0, Buffer.Length), Math.Clamp(s.Active, 0, Buffer.Length))));
+        _preferredColumn = null; SelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
+    public void SelectRectangle(TextPosition anchor, TextPosition active)
+    {
+        var first = Math.Clamp(Math.Min(anchor.Line, active.Line), 0, Buffer.LineCount - 1);
+        var last = Math.Clamp(Math.Max(anchor.Line, active.Line), first, Buffer.LineCount - 1);
+        SetSelections(Enumerable.Range(first, last - first + 1).Select(line => new Selection(
+            Buffer.OffsetAt(new(line, anchor.Character)), Buffer.OffsetAt(new(line, active.Character)))));
     }
     public void SelectAll() => Select(0, Buffer.Length);
     public void SelectWord(int offset)
@@ -76,10 +97,10 @@ public sealed class EditorSession
     {
         _undo.Add(Snapshot()); if (_undo.Count > 500) _undo.RemoveAt(0); _redo.Clear();
     }
-    private void Notify(int firstLine)
+    private void Notify(int firstLine, TextBuffer? previous = null, IReadOnlyList<TextEdit>? edits = null)
     {
-        // Dirty tracking is a structural snapshot comparison: never flatten the document on a keystroke.
-        Version++; Changed?.Invoke(this, new DocumentChangedEventArgs(firstLine, Version)); SelectionChanged?.Invoke(this, EventArgs.Empty);
+        // Dirty tracking never flattens the document on a keystroke.
+        Version++; Changed?.Invoke(this, new DocumentChangedEventArgs(firstLine, Version, previous, edits)); SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
     public void Insert(string text) => ReplaceSelections(_ => text);
     public void InsertNewLine() => ReplaceSelections(selection =>
@@ -98,15 +119,22 @@ public sealed class EditorSession
         var ordered = edits.OrderBy(e => e.Start).ToArray(); if (ordered.Length == 0) return;
         var updated = Buffer.Apply(ordered); // Validate the complete transaction before recording history.
         if (ReferenceEquals(updated, Buffer)) return;
-        var firstLine = Buffer.PositionAt(ordered[0].Start).Line; BeforeEdit();
+        var previous = Buffer; var firstLine = Buffer.PositionAt(ordered[0].Start).Line; BeforeEdit();
         var delta = 0; var cursors = new List<Selection>();
         foreach (var edit in ordered) { var end = edit.Start + delta + edit.Text.Length; cursors.Add(new Selection(end, end)); delta += edit.Text.Length - edit.Length; }
-        File.Buffer = updated; _selections = Normalize(cursors); _preferredColumn = null; Notify(firstLine);
+        File.Buffer = updated; _selections = Normalize(cursors); _preferredColumn = null; Notify(firstLine, previous, ordered);
     }
+    internal void CommitPrepared(TextBuffer updated, TextEdit[] ordered)
+    {
+        BeforeEdit(); var delta = 0; var cursors = new List<Selection>();
+        foreach (var edit in ordered) { var end = edit.Start + delta + edit.Text.Length; cursors.Add(new(end, end)); delta += edit.Text.Length - edit.Length; }
+        File.Buffer = updated; _selections = Normalize(cursors); _preferredColumn = null;
+    }
+    internal void PublishPrepared(TextBuffer previous, TextEdit[] ordered) => Notify(previous.PositionAt(ordered[0].Start).Line, previous, ordered);
     public void Delete(bool backward)
     {
         var expanded = Normalize(_selections.Select(s => s.Length != 0 ? s : backward ? new Selection(PreviousGrapheme(s.Active), s.Active) : new Selection(s.Active, NextGrapheme(s.Active))));
-        // Preserve the original caret(s) in the undo snapshot, not the temporary deletion ranges.
+        // Preserve original carets in the undo snapshot, not temporary deletion ranges.
         Apply(expanded.Where(s => s.Length != 0).Select(s => new TextEdit(s.Start, s.Length, "")));
     }
     public int PreviousGrapheme(int offset)
@@ -124,7 +152,7 @@ public sealed class EditorSession
         if (Buffer[offset] == '\r' && offset + 1 < Buffer.Length && Buffer[offset + 1] == '\n') return offset + 2;
         if (Buffer[offset] == '\n') return offset + 1;
         if (Buffer[offset] <= 0x7f && (offset + 1 == Buffer.Length || Buffer[offset + 1] <= 0x7f)) return offset + 1;
-        var line = Buffer.GetLine(Buffer.PositionAt(offset).Line); var remaining = Math.Max(1, line.Start + line.Length - offset);
+        var line = Buffer.GetLineInfo(Buffer.PositionAt(offset).Line); var remaining = Math.Max(1, line.Start + line.Length - offset);
         var text = Buffer.Slice(offset, Math.Min(remaining, Buffer.Length - offset));
         return offset + StringInfo.GetNextTextElementLength(text.AsSpan());
     }
@@ -145,7 +173,7 @@ public sealed class EditorSession
                 CursorMove.PageUp => Buffer.OffsetAt(new(pos.Line - pageSize, _preferredColumn ?? pos.Character)),
                 CursorMove.PageDown => Buffer.OffsetAt(new(pos.Line + pageSize, _preferredColumn ?? pos.Character)),
                 CursorMove.Home => Buffer.GetLineStart(pos.Line),
-                CursorMove.End => Buffer.GetLineStart(pos.Line) + Buffer.GetLine(pos.Line).Length,
+                CursorMove.End => Buffer.GetLineStart(pos.Line) + Buffer.GetLineInfo(pos.Line).Length,
                 CursorMove.DocumentStart => 0,
                 CursorMove.DocumentEnd => Buffer.Length,
                 _ => offset

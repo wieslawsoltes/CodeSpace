@@ -24,6 +24,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
     private readonly EditorSurface _surface;
     private readonly EditorInputBridge _input;
     private readonly DispatcherTimer _caret = new() { Interval = TimeSpan.FromMilliseconds(530) };
+    private readonly DispatcherTimer _analysisTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _findTimer = new() { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly Border _findBox;
     private readonly TextBox _findInput, _replaceInput;
@@ -33,6 +34,9 @@ public sealed class CodeEditorControl : Grid, IDisposable
     private bool _disposed;
     private int _anchor;
     private bool _findCase, _findRegex;
+    private bool _rectangle;
+    private long _foldVersion = -1;
+    private bool _foldsInitialized;
     public EditorSession Session { get; }
     public EditorViewport Viewport { get; } = new();
     public EditorRenderer Renderer { get; } = new();
@@ -55,6 +59,11 @@ public sealed class CodeEditorControl : Grid, IDisposable
             var x = (float)point.Position.X; var y = (float)point.Position.Y;
             if (x >= ActualWidth - 12) { _scrollDragging = true; ScrollFromPointer(y); }
             else if (Viewport.ShowMinimap && x > ActualWidth - Viewport.MinimapWidth) ScrollFromPointer(y);
+            else if (x > Viewport.GutterWidth - 16 && x < Viewport.GutterWidth)
+            {
+                var line = Session.Buffer.PositionAt(Renderer.HitTest(Session, Viewport, x, y)).Line;
+                ToggleFold(line); _surface.Invalidate();
+            }
             else if (x < 22)
             {
                 var line = Session.Buffer.PositionAt(Renderer.HitTest(Session, Viewport, x, y)).Line;
@@ -63,7 +72,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
             else
             {
                 var offset = Renderer.HitTest(Session, Viewport, x, y); _anchor = KeyModifiers.Shift ? Session.Primary.Anchor : offset;
-                Session.Select(_anchor, offset, KeyModifiers.Alt); _dragging = true;
+                _rectangle = KeyModifiers.Alt && KeyModifiers.Shift; Session.Select(_anchor, offset, KeyModifiers.Alt && !_rectangle); _dragging = true;
             }
             _surface.CapturePointer(e.Pointer); e.Handled = true;
         };
@@ -75,7 +84,9 @@ public sealed class CodeEditorControl : Grid, IDisposable
             {
                 if (point.Y < 0) Viewport.ScrollY = Math.Max(0, Viewport.ScrollY - Viewport.LineHeight);
                 if (point.Y > ActualHeight) Viewport.ScrollY += Viewport.LineHeight;
-                Session.Select(_anchor, Renderer.HitTest(Session, Viewport, (float)point.X, (float)point.Y));
+                var offset = Renderer.HitTest(Session, Viewport, (float)point.X, (float)point.Y);
+                if (_rectangle) Session.SelectRectangle(Session.Buffer.PositionAt(_anchor), Session.Buffer.PositionAt(offset));
+                else Session.Select(_anchor, offset);
             }
         };
         _surface.PointerReleased += (_, e) => { _dragging = _scrollDragging = false; _surface.ReleasePointerCapture(e.Pointer); e.Handled = true; };
@@ -103,9 +114,10 @@ public sealed class CodeEditorControl : Grid, IDisposable
         _findInput.TextChanged += (_, _) => { _findTimer.Stop(); _findTimer.Start(); };
         _findInput.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) { NextMatch(!KeyModifiers.Shift); e.Handled = true; } else if (e.Key == VirtualKey.Escape) { HideFind(); e.Handled = true; } };
         _findTimer.Tick += (_, _) => { _findTimer.Stop(); UpdateFind(); };
+        _analysisTimer.Tick += (_, _) => { _analysisTimer.Stop(); if (Session.Buffer.Length < 512 * 1024) { RefreshFolds(); _surface.Invalidate(); } };
         Session.Changed += OnChanged; Session.SelectionChanged += OnSelectionChanged;
-        Loaded += (_, _) => { if (Viewport.Focused) _caret.Start(); _surface.Invalidate(); };
-        Unloaded += (_, _) => { _caret.Stop(); _findTimer.Stop(); };
+        Loaded += (_, _) => { if (!_foldsInitialized && Session.Buffer.Length < 512 * 1024) RefreshFolds(); if (Viewport.Focused) _caret.Start(); _surface.Invalidate(); };
+        Unloaded += (_, _) => { _caret.Stop(); _findTimer.Stop(); _analysisTimer.Stop(); };
         SizeChanged += (_, _) => _surface.Invalidate();
     }
     private static TextBox Input(string placeholder, double width)
@@ -113,8 +125,36 @@ public sealed class CodeEditorControl : Grid, IDisposable
         var input = new TextBox { PlaceholderText = placeholder, Width = width, FontSize = 13, MinHeight = 27, Padding = new Thickness(5, 2, 5, 2), Background = WorkbenchColors.Brush("#313131"), Foreground = WorkbenchColors.Foreground, BorderBrush = WorkbenchColors.Brush("#454545"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0) };
         AutomationProperties.SetName(input, placeholder); return input;
     }
-    private void ScrollFromPointer(float y) { Viewport.ScrollY = Math.Max(0, y / Math.Max(1, ActualHeight) * Session.Buffer.LineCount * Viewport.LineHeight - ActualHeight / 2); _surface.Invalidate(); }
+    private void ScrollFromPointer(float y) { Viewport.ScrollY = Math.Max(0, y / Math.Max(1, ActualHeight) * Viewport.Folding.VisibleLineCount(Session.Buffer.LineCount) * Viewport.LineHeight - ActualHeight / 2); _surface.Invalidate(); }
+    public void RefreshFolds()
+    {
+        if (_foldVersion == Session.Version) return;
+        _foldVersion = Session.Version; _foldsInitialized = true;
+        Viewport.FoldRanges = LanguageServices.FoldingRanges(Session.Buffer, Session.File.Path)
+            .GroupBy(r => r.StartLine).ToDictionary(g => g.Key, g => g.Max(r => r.EndLine));
+    }
+    public void ToggleFold(int? line = null)
+    {
+        RefreshFolds(); var target = line ?? Session.Buffer.PositionAt(Session.Primary.Active).Line;
+        var region = Viewport.FoldRanges.Where(p => p.Key <= target && p.Value >= target).OrderByDescending(p => p.Key).FirstOrDefault();
+        if (region.Value <= region.Key) return;
+        if (Viewport.Folding.IsCollapsed(region.Key)) Viewport.Folding.Expand(region.Key);
+        else
+        {
+            var offset = Session.Buffer.GetLineStart(region.Key); Session.Select(offset, offset);
+            Viewport.Folding.Collapse(region.Key, region.Value);
+        }
+        _surface.Invalidate();
+    }
+    public void FoldAll()
+    {
+        RefreshFolds(); Session.Select(0, 0);
+        foreach (var region in Viewport.FoldRanges) Viewport.Folding.Collapse(region.Key, region.Value);
+        Viewport.ScrollY = 0; _surface.Invalidate();
+    }
+    public void UnfoldAll() { Viewport.Folding.Clear(); _surface.Invalidate(); }
     public void FocusEditor() => _input.Focus(FocusState.Programmatic);
+    public void Redraw() => _surface.Invalidate();
     public void InvalidateEditor() { Renderer.Invalidate(); _surface.Invalidate(); }
     public void ShowFind(bool replace = false) { _findBox.Visibility = Visibility.Visible; if (Session.Primary.Length > 0 && Session.Primary.Length < 200) _findInput.Text = Session.SelectedText; _findInput.Focus(FocusState.Programmatic); _findInput.SelectAll(); UpdateFind(); }
     public void HideFind() { _findBox.Visibility = Visibility.Collapsed; Viewport.FindMatches = []; _surface.Invalidate(); FocusEditor(); }
@@ -130,7 +170,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
         var match = forward ? matches.FirstOrDefault(m => m.Start >= Session.Primary.End && m.Start != Session.Primary.Start) : matches.LastOrDefault(m => m.End <= Session.Primary.Start && m.Start != Session.Primary.Start);
         if (match == default) match = forward ? matches[0] : matches[^1]; Session.Select(match.Start, match.End);
     }
-    private void OnChanged(object? sender, DocumentChangedEventArgs e) { if (_findBox.Visibility == Visibility.Visible) { _findTimer.Stop(); _findTimer.Start(); } _surface.Invalidate(); }
+    private void OnChanged(object? sender, DocumentChangedEventArgs e) { _analysisTimer.Stop(); _analysisTimer.Start(); Viewport.Folding.Clear(); _foldVersion = -1; Viewport.FoldRanges = new Dictionary<int, int>(); if (_findBox.Visibility == Visibility.Visible) { _findTimer.Stop(); _findTimer.Start(); } _surface.Invalidate(); }
     private void OnSelectionChanged(object? sender, EventArgs e)
     {
         Viewport.CaretVisible = true; Renderer.EnsureCaretVisible(Session, Viewport, (float)ActualWidth, (float)ActualHeight); _surface.Invalidate(); CaretChanged?.Invoke(this, EventArgs.Empty);
@@ -192,6 +232,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
                 }
                 e.Handled = true; return;
             }
+            if (KeyModifiers.Alt && shift && e.Key == VirtualKey.F) { CommandRequested?.Invoke(this, "editor.action.formatDocument"); e.Handled = true; return; }
             switch (e.Key)
             {
                 case VirtualKey.Left: Session.Move(CursorMove.Left, shift); break;
@@ -209,6 +250,7 @@ public sealed class CodeEditorControl : Grid, IDisposable
                 case VirtualKey.Escape: HideFind(); Session.Select(Session.Primary.Active, Session.Primary.Active); break;
                 case VirtualKey.F1: CommandRequested?.Invoke(this, "workbench.action.showCommands"); break;
                 case VirtualKey.F3: NextMatch(!shift); break;
+                case VirtualKey.F12: CommandRequested?.Invoke(this, "editor.action.revealDefinition"); break;
                 default: return;
             }
             e.Handled = true;
@@ -217,6 +259,6 @@ public sealed class CodeEditorControl : Grid, IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; _input.KeyProcessor = null; _caret.Stop(); _findTimer.Stop(); Session.Changed -= OnChanged; Session.SelectionChanged -= OnSelectionChanged; Renderer.Dispose();
+        if (_disposed) return; _disposed = true; _input.KeyProcessor = null; _caret.Stop(); _findTimer.Stop(); _analysisTimer.Stop(); Session.Changed -= OnChanged; Session.SelectionChanged -= OnSelectionChanged; Renderer.Dispose();
     }
 }

@@ -22,7 +22,7 @@ public static class LanguageCatalog
         new("typescript", "TypeScript", [".ts", ".tsx"], "//", Words(JsWords)),
         new("javascript", "JavaScript", [".js", ".mjs", ".cjs", ".jsx"], "//", Words(JsWords)),
         new("json", "JSON", [".json", ".jsonc"], "//", Words("true false null")),
-        new("python", "Python", [".py", ".pyi"], "#", Words("and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield")),
+        new("python", "Python", [".py", ".pyi"], "#", Words("and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return return True try while with yield")),
         new("html", "HTML", [".html", ".htm"], "", Words("")),
         new("xml", "XML", [".xml", ".xaml", ".csproj", ".props", ".slnx", ".svg"], "", Words("")),
         new("css", "CSS", [".css", ".scss"], "", Words("important media supports keyframes from to")),
@@ -49,7 +49,7 @@ public static class SyntaxLexer
             if (block)
             {
                 var end = text.IndexOf("*/", i, StringComparison.Ordinal);
-                if (end < 0) { tokens.Add(new(i, text.Length - i, TokenKind.Comment)); return new(tokens.ToArray(), new(true, quote)); }
+                if (end < 0) { tokens.Add(new(i, text.Length - i, TokenKind.Comment)); return new(Coalesce(tokens), new(true, quote)); }
                 i = end + 2; block = false; tokens.Add(new(start, i - start, TokenKind.Comment)); continue;
             }
             if (quote != '\0')
@@ -60,7 +60,12 @@ public static class SyntaxLexer
             var current = text[i];
             if (language.LineComment.Length > 0 && text.AsSpan(i).StartsWith(language.LineComment, StringComparison.Ordinal))
             { tokens.Add(new(i, text.Length - i, TokenKind.Comment)); break; }
-            if (current == '/' && i + 1 < text.Length && text[i + 1] == '*') { block = true; i += 2; continue; }
+            if (current == '/' && i + 1 < text.Length && text[i + 1] == '*')
+            {
+                var end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                block = end < 0; i = block ? text.Length : end + 2;
+                tokens.Add(new(start, i - start, TokenKind.Comment)); continue;
+            }
             if ((language.Id is "html" or "xml") && text.AsSpan(i).StartsWith("<!--"))
             {
                 var end = text.IndexOf("-->", i + 4, StringComparison.Ordinal); i = end < 0 ? text.Length : end + 3;
@@ -89,7 +94,20 @@ public static class SyntaxLexer
             }
             i++; tokens.Add(new(start, 1, char.IsWhiteSpace(current) ? TokenKind.Plain : "{}[]();,.".Contains(current) ? TokenKind.Punctuation : TokenKind.Operator));
         }
-        return new(tokens.ToArray(), new(block, quote));
+        return new(Coalesce(tokens), new(block, quote));
+    }
+    private static SyntaxToken[] Coalesce(List<SyntaxToken> tokens)
+    {
+        if (tokens.Count < 2) return tokens.ToArray();
+        var write = 0;
+        for (var read = 1; read < tokens.Count; read++)
+        {
+            var previous = tokens[write]; var current = tokens[read];
+            if (previous.Kind == current.Kind && previous.Start + previous.Length == current.Start)
+                tokens[write] = previous with { Length = previous.Length + current.Length };
+            else tokens[++write] = current;
+        }
+        return tokens.GetRange(0, write + 1).ToArray();
     }
 }
 
@@ -159,8 +177,11 @@ public static class LanguageServices
             var text = buffer.GetLine(line).Text;
             foreach (var token in syntax.GetLine(buffer, line).Tokens.Where(t => t.Kind == TokenKind.Punctuation))
             {
-                if (text[token.Start] == '{') stack.Push(line);
-                else if (text[token.Start] == '}' && stack.Count > 0) { var start = stack.Pop(); if (line > start) ranges.Add(new(start, line)); }
+                for (var i = token.Start; i < token.Start + token.Length; i++)
+                {
+                    if (text[i] == '{') stack.Push(line);
+                    else if (text[i] == '}' && stack.Count > 0) { var start = stack.Pop(); if (line > start) ranges.Add(new(start, line)); }
+                }
             }
         }
         return ranges;

@@ -1,7 +1,5 @@
 # Architecture
 
-## Dependency direction
-
 ```text
 App (desktop / browser adapters)
   └─ Workbench.Uno
@@ -10,42 +8,48 @@ App (desktop / browser adapters)
        │    └─ Docking
        └─ Extensions → Core
 Rendering.Skia → Languages → Core
-ExtensionHost (independent JavaScript package)
+ExtensionHost (independent JavaScript)
   ├─ browser module worker
   └─ Node stdin/stdout process
        ↕ JSON messages / IExtensionBridge
 ```
 
-The six portable libraries target `net10.0` without Uno dependencies. The two Uno libraries target `net10.0-desktop` and `net10.0-browserwasm`. The application is their consumer, not a required engine dependency. The JavaScript host has no npm runtime dependencies.
+Six portable libraries target net10.0 without Uno dependencies. Two Uno libraries target net10.0-desktop and net10.0-browserwasm. The app consumes them. The JS host has no npm runtime dependencies. WorkbenchView is split into partial files by UI, storage, extension transport and language integration concerns.
 
-## Text storage and editing
+## Text and transactions
 
-`TextBuffer` is a persistent AVL rope. Leaves reference immutable strings in chunks of at most 2,048 UTF-16 units. Branches cache length, height and newline count; leaves index newlines locally. Replacements split and rejoin balanced nodes, sharing unaffected subtrees with undo snapshots. All edit offsets are UTF-16. Source line endings are preserved.
+TextBuffer is a persistent AVL rope with source-string slices of at most 2,048 UTF-16 units per leaf. Branches cache length, height and newline count; leaves index newlines. Split/join edits share unaffected subtrees with history. GetLineInfo and OffsetAt use metadata without allocating strings. Slice creates only the destination string, and CopyTo accepts caller-owned spans.
 
-`EditorSession` validates the entire edit batch before mutation. History contains a buffer root and selection array, bounded to 500 snapshots. Dirty tracking compares the current and saved snapshot in O(1), not the complete text on every keystroke. Manually replacing content with equivalent text remains a new edit until save or return to the saved history snapshot. Grapheme navigation sits above the raw offset engine.
+EditorSession validates batches before mutation. History stores a root and selection array, bounded to 500 snapshots. Saved-state comparison is O(1); equivalent manually retyped text remains a new edit until save or return to the saved snapshot. Grapheme navigation is above raw UTF-16 offsets. Rectangular selections are represented as multi-selection transactions.
 
-Tests include 10,000 seeded randomized edits compared with ordinary string operations. An allocation gate measures 100 inserts into a two-million-character document. It is not a wall-clock or GPU performance guarantee.
+WorkspaceEditTransaction checks all documents, duplicates, versions and edit ranges before committing any roots. All buffers change before observers are notified. Undo remains per-document, not a grouped cross-file undo manager. Resource creation/deletion/rename is outside this transaction API.
 
-## Graphics and input
+FoldingState retains collapsed regions and merged hidden intervals with prefix counts. Binary row/line lookups use space proportional to folds, not total lines. Editing clears folds conservatively. Lexical ranges rebuild after a debounce for files below 512 KiB; explicit folding commands can scan larger files.
 
-`EditorRenderer` draws to a caller-owned `SKCanvas`. Uno's `SKCanvasElement` supplies the existing composition surface; the editor does not upload a CPU bitmap per frame. Uno/Skia select the actual hardware backend and fallback behavior. The project does not contain a separately qualified Vulkan, Metal or WebGPU backend.
+## Rendering and input
 
-Visible line layouts and lexical state are cached. The minimap is a simplified line-length representation. Large single lines and distant jumps requiring lexical prefix processing remain optimization targets. Render metrics describe CPU paint work, not GPU timestamps.
+EditorRenderer accepts a caller-owned SKCanvas. Uno SKCanvasElement supplies the existing composition surface, without a CPU bitmap upload. Uno/Skia own backend selection and fallback. The project does not contain a separate qualified Vulkan/Metal/WebGPU backend.
 
-Clusters are measured and drawn independently. Full contextual shaping, bidi, ligatures, variable fonts and font fallback are not qualified. The browser loads the framework's licensed Open Sans fallback; it is not an exact VS Code monospace match. An embedding host may supply a licensed `SKTypeface` through `EditorRenderer.DefaultTypeface`.
+Up to 512 line layouts own disposable positioned-text blobs. ASCII advances are cached, batches culled, adjacent equivalent lexical tokens coalesced, minimap samples reused, and hit testing uses binary search. Non-ASCII text keeps the measured cluster path. The minimap represents line lengths. Metrics are CPU paint duration, calls and cache counts, not GPU timestamps. See performance.md for reference comparisons.
 
-`CodeEditorControl` owns viewport, pointer/keyboard editing and find UI. A tiny Uno `TextBox` is used only as a text-input bridge, never as document storage or renderer. Full IME and screen-reader document navigation remain open. `FileTreeControl` and original vector icons also use custom Skia drawing. The other custom controls compose Uno primitives with workbench styling.
+Full contextual shaping, bidi, ligatures, variable fonts, fallback and IME remain open. The browser loads the framework's licensed Open Sans fallback, not an exact VS Code monospace match. Embedders may provide a licensed SKTypeface. EditorInputBridge gives document commands priority over native TextBox history; the tiny input control never owns the full document. The file tree and vector icons also use custom Skia drawing.
 
-## Docking, files and recovery
+## Workbench, files and recovery
 
-Docking is an immutable split/tab model independent of controls. Each group chooses an active document; multiple views share a session. Split resizing updates host geometry during drag and persists the final ratio. Empty groups remain valid; floating and multi-window behavior is not implemented.
+DockLayout is independent of controls. Groups choose active files, multiple views share sessions, and resizes update geometry before persisting ratios. Empty groups remain valid. Floating/multi-window behavior is not implemented.
 
-`IWorkbenchPlatform` separates imports, exports, recovery and extension transport. Files live in a virtual workspace, not a watched OS folder. Browser recovery uses one atomic localStorage replacement after a debounce; quota and security exceptions surface to the user. Desktop recovery writes a temporary file then replaces the previous recovery file. Export is the durable backup workflow. Recovery is not encrypted, synchronized or a complete history/settings restoration.
+IWorkbenchPlatform supplies import/export/recovery/extension transports. Files are virtual, not attached to watched disk folders. Recovery saves content, dirty baselines, selections, viewport/folds and user settings; undo history is not saved. Browser recovery atomically replaces one localStorage value; quota/privacy failures are reported. Desktop writes a temporary file before replacement. Recovery is neither encrypted nor a backup.
+
+EditorConfiguration accepts bounded JSONC. Built-in defaults, user settings and workspace values determine supported editor settings; invalid intermediate JSON leaves the previous configuration applied. UI/extension updates rewrite the JSON and do not preserve comments.
 
 ## Extension boundary
 
-VSIX inspection is bounded and non-executing. Activation requires explicit trust. CommonJS packages run in a browser worker or optional Node process behind a deliberately limited `require('vscode')` facade. Unknown APIs fail visibly. Host requests have timeouts; responses bypass activation/command serialization so activation can await UI RPC without deadlock.
+VSIX inspection is bounded and non-executing. Explicit trust is required for CommonJS activation in a worker or optional Node process. The limited require('vscode') facade rejects unknown properties. Configuration and language-provider adapters are separate modules; API value types are in api-types.mjs.
 
-Documents synchronize before extension commands and after bridged requests; continuous incremental synchronization is not implemented. Workers isolate CPU work from the UI thread, not hostile code from workspace data or network access. Node runs with the current user's process authority. This is not a security sandbox.
+After activation, a 120 ms timer synchronizes changed-file snapshots, deleted URIs and selection metadata. Unchanged files and JS line indexes are retained. This is not per-character delta encoding. Requests are also synchronized before commands and after bridged edits. A semaphore serializes outgoing snapshot construction.
 
-Read-only browser state is available only in `?e2e=1` diagnostic mode for real UI tests. That mode exposes document text to same-origin diagnostic JavaScript, but no command-execution endpoint. Never use it for sensitive documents.
+Language requests carry IDs and document versions. Cancellation/UI responses bypass serialized activation operations to prevent deadlock. The workbench rejects stale results and times out requests. Completions use the custom QuickPick, hover is non-executable plain text, definitions navigate files, formatting is one undoable batch and diagnostic collections update squiggles/Problems. No general LSP client or language server is supplied.
+
+A worker isolates work from the UI thread, not malicious code from data/network access. Node has user process authority. The hosts are not security sandboxes.
+
+Read-only browser state is enabled only with ?e2e=1 for UI tests. It exposes document text to same-origin diagnostic JS but provides no command-execution endpoint. Do not enable it for sensitive documents.

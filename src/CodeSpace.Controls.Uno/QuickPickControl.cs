@@ -10,7 +10,7 @@ namespace CodeSpace.Controls.Uno;
 public sealed record QuickPickItem(string Label, string Detail, string Shortcut, Action Execute);
 public sealed class QuickPickControl : Grid
 {
-    private readonly TextBox _input;
+    private readonly EditorInputBridge _input;
     private readonly StackPanel _results;
     private readonly TextBlock _hint;
     private readonly DispatcherTimer _focusTimer = new() { Interval = TimeSpan.FromMilliseconds(25) };
@@ -19,28 +19,29 @@ public sealed class QuickPickControl : Grid
     private int _selected, _focusAttempts;
     private Action<string>? _submit;
     public event EventHandler? Dismissed;
+    public bool IsOpen => Visibility == Visibility.Visible;
+    public bool IsInputFocused => IsOpen && _input.FocusState != FocusState.Unfocused;
     public QuickPickControl()
     {
         Visibility = Visibility.Collapsed; Background = WorkbenchColors.Brush("#30000000");
         var panel = new StackPanel();
-        _input = new TextBox { Margin = new Thickness(6), Padding = new Thickness(8, 6, 8, 6), Background = WorkbenchColors.Brush("#313131"), Foreground = WorkbenchColors.Foreground, BorderBrush = WorkbenchColors.Accent, BorderThickness = new Thickness(1), FontSize = 13, CornerRadius = new CornerRadius(0) };
+        _input = new EditorInputBridge { Margin = new Thickness(6), Padding = new Thickness(8, 6, 8, 6), Background = WorkbenchColors.Brush("#313131"), Foreground = WorkbenchColors.Foreground, BorderBrush = WorkbenchColors.Accent, BorderThickness = new Thickness(1), FontSize = 13, CornerRadius = new CornerRadius(0) };
         AutomationProperties.SetName(_input, "Command palette input"); panel.Children.Add(_input);
         _results = new StackPanel(); panel.Children.Add(new ScrollViewer { Content = _results, MaxHeight = 380, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         _hint = WorkbenchColors.Text("↑↓ to navigate    Enter to select    Esc to dismiss", 11, "#9d9d9d"); _hint.Margin = new Thickness(12, 8, 12, 8); panel.Children.Add(_hint);
         var card = new Border { Child = panel, Width = 640, MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(16, 8, 16, 0), Background = WorkbenchColors.Brush("#252526"), BorderBrush = WorkbenchColors.Brush("#454545"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
         Children.Add(card); SizeChanged += (_, _) => card.Width = Math.Max(200, Math.Min(640, ActualWidth - 32));
-        _input.TextChanged += (_, _) => { _selected = 0; Refresh(); };
-        _input.KeyDown += (_, e) =>
+        _input.TextChanged += (_, _) => { if (IsOpen) { _selected = 0; Refresh(); } };
+        _input.KeyProcessor = e =>
         {
             if (e.Key == VirtualKey.Escape) { Hide(); e.Handled = true; }
             else if (e.Key == VirtualKey.Down) { _selected = Math.Min(_filtered.Length - 1, _selected + 1); DrawRows(); e.Handled = true; }
             else if (e.Key == VirtualKey.Up) { _selected = Math.Max(0, _selected - 1); DrawRows(); e.Handled = true; }
-            else if (e.Key == VirtualKey.Enter) { var submit = _submit; var text = _input.Text; if (submit is not null) { Hide(); submit(text); } else Choose(_selected); e.Handled = true; }
+            else if (e.Key == VirtualKey.Enter) { Refresh(); var submit = _submit; var text = _input.Text; if (submit is not null) { Hide(); submit(text); } else Choose(_selected); e.Handled = true; }
         };
         _focusTimer.Tick += (_, _) =>
         {
-            // A collapsed control can report a stale location before its first layout.
-            // Focus only after layout so Uno can place its native text-input bridge correctly.
+            // Focus only after layout so Uno can position its native text-input bridge.
             if (Visibility != Visibility.Visible || ++_focusAttempts > 20) { _focusTimer.Stop(); return; }
             if (_input.ActualWidth > 10 && _input.ActualHeight > 10 && _input.Focus(FocusState.Programmatic))
             { _input.Select(_input.Text.Length, 0); _focusTimer.Stop(); }
@@ -57,7 +58,13 @@ public sealed class QuickPickControl : Grid
     {
         Show([], placeholder, initialText); _submit = submit; _hint.Text = "Enter to confirm    Esc to cancel";
     }
-    public void Hide() { _focusTimer.Stop(); Visibility = Visibility.Collapsed; _submit = null; Dismissed?.Invoke(this, EventArgs.Empty); }
+    public void Hide()
+    {
+        if (!IsOpen) return;
+        _focusTimer.Stop(); Visibility = Visibility.Collapsed; _submit = null;
+        _items = []; _filtered = []; _results.Children.Clear();
+        Dismissed?.Invoke(this, EventArgs.Empty);
+    }
     private void Refresh()
     {
         _filtered = _items.Select(i => (Item: i, Score: CommandRegistry.FuzzyScore(i.Label, _input.Text))).Where(x => x.Score >= 0).OrderByDescending(x => x.Score).Take(60).Select(x => x.Item).ToArray();

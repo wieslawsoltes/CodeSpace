@@ -1,103 +1,8 @@
-/** MIT. An intentionally explicit VS Code API subset, independent of Uno and any renderer.
- * Executed extension code is TRUSTED code. Neither Function nor a Worker is a security sandbox.
- */
-export class Disposable {
-  #callback;
-  constructor(callback = () => {}) { this.#callback = callback; }
-  dispose() { const callback = this.#callback; this.#callback = undefined; callback?.(); }
-  static from(...items) { return new Disposable(() => { for (const item of items) item?.dispose(); }); }
-}
-export class EventEmitter {
-  #listeners = new Set();
-  event = (listener, thisArgs, disposables) => {
-    if (typeof listener !== 'function') throw new TypeError('Event listener must be a function.');
-    const entry = { listener, thisArgs }; this.#listeners.add(entry);
-    const disposable = new Disposable(() => this.#listeners.delete(entry)); disposables?.push(disposable); return disposable;
-  };
-  fire(value) { for (const entry of [...this.#listeners]) entry.listener.call(entry.thisArgs, value); }
-  dispose() { this.#listeners.clear(); }
-}
-export class Position {
-  constructor(line, character) {
-    if (!Number.isInteger(line) || !Number.isInteger(character) || line < 0 || character < 0) throw new RangeError('Position must contain non-negative integers.');
-    this.line = line; this.character = character;
-  }
-  compareTo(other) { return this.line - other.line || this.character - other.character; }
-  isBefore(other) { return this.compareTo(other) < 0; }
-  isBeforeOrEqual(other) { return this.compareTo(other) <= 0; }
-  isAfter(other) { return this.compareTo(other) > 0; }
-  isAfterOrEqual(other) { return this.compareTo(other) >= 0; }
-  isEqual(other) { return this.compareTo(other) === 0; }
-  translate(lineDelta = 0, characterDelta = 0) { if (typeof lineDelta === 'object') return this.translate(lineDelta.lineDelta ?? 0, lineDelta.characterDelta ?? 0); return new Position(this.line + lineDelta, this.character + characterDelta); }
-  with(line = this.line, character = this.character) { if (typeof line === 'object') return new Position(line.line ?? this.line, line.character ?? this.character); return new Position(line, character); }
-  toJSON() { return { line: this.line, character: this.character }; }
-}
-export class Range {
-  constructor(a, b, c, d) {
-    let start = typeof a === 'number' ? new Position(a, b) : a;
-    let end = typeof a === 'number' ? new Position(c, d) : b;
-    if (!(start instanceof Position) || !(end instanceof Position)) throw new TypeError('Range requires Position values.');
-    if (start.isAfter(end)) [start, end] = [end, start]; this.start = start; this.end = end;
-  }
-  get isEmpty() { return this.start.isEqual(this.end); }
-  get isSingleLine() { return this.start.line === this.end.line; }
-  contains(value) { return value instanceof Range ? this.contains(value.start) && this.contains(value.end) : this.start.isBeforeOrEqual(value) && this.end.isAfterOrEqual(value); }
-  isEqual(other) { return this.start.isEqual(other.start) && this.end.isEqual(other.end); }
-  intersection(other) { const start = this.start.isAfter(other.start) ? this.start : other.start; const end = this.end.isBefore(other.end) ? this.end : other.end; return start.isAfter(end) ? undefined : new Range(start, end); }
-  union(other) { return new Range(this.start.isBefore(other.start) ? this.start : other.start, this.end.isAfter(other.end) ? this.end : other.end); }
-  with(start = this.start, end = this.end) { if (!(start instanceof Position)) return new Range(start.start ?? this.start, start.end ?? this.end); return new Range(start, end); }
-}
-export class Selection extends Range {
-  constructor(a, b, c, d) { super(a, b, c, d); this.anchor = typeof a === 'number' ? new Position(a, b) : a; this.active = typeof a === 'number' ? new Position(c, d) : b; }
-  get isReversed() { return this.anchor.isAfter(this.active); }
-}
-export class Uri {
-  constructor(scheme, authority = '', path = '', query = '', fragment = '') { Object.assign(this, { scheme, authority, path, query, fragment }); }
-  static parse(value) { const match = /^([a-zA-Z][a-zA-Z\d+.-]*):(?:\/\/([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/.exec(value); if (!match) throw new TypeError('Invalid URI: ' + value); return new Uri(match[1], match[2] ?? '', decodeURIComponent(match[3]), match[4] ?? '', match[5] ?? ''); }
-  static file(path) { path = path.replaceAll('\\', '/'); return new Uri('file', '', path.startsWith('/') ? path : '/' + path); }
-  static from(parts) { return new Uri(parts.scheme, parts.authority, parts.path, parts.query, parts.fragment); }
-  static joinPath(base, ...paths) { const parts = (base.path + '/' + paths.join('/')).split('/'); const out = []; for (const p of parts) { if (p === '..') out.pop(); else if (p && p !== '.') out.push(p); } return base.with({ path: '/' + out.join('/') }); }
-  with(change) { return Uri.from({ ...this, ...change }); }
-  get fsPath() { return this.path; }
-  toString(skipEncoding = false) { const path = skipEncoding ? this.path : this.path.split('/').map(encodeURIComponent).join('/'); return this.scheme + ':' + (this.authority || path.startsWith('/') ? '//' + this.authority : '') + path + (this.query ? '?' + this.query : '') + (this.fragment ? '#' + this.fragment : ''); }
-  toJSON() { return { ...this }; }
-}
-export class TextEdit {
-  constructor(range, newText) { this.range = range; this.newText = newText; }
-  static replace(range, newText) { return new TextEdit(range, newText); }
-  static insert(position, newText) { return new TextEdit(new Range(position, position), newText); }
-  static delete(range) { return new TextEdit(range, ''); }
-}
-export class WorkspaceEdit {
-  #edits = new Map();
-  set(uri, edits) { this.#edits.set(uri.toString(), { uri, edits: [...edits] }); }
-  get(uri) { return this.#edits.get(uri.toString())?.edits ?? []; }
-  replace(uri, range, text) { this.set(uri, [...this.get(uri), TextEdit.replace(range, text)]); }
-  insert(uri, position, text) { this.replace(uri, new Range(position, position), text); }
-  delete(uri, range) { this.replace(uri, range, ''); }
-  has(uri) { return this.#edits.has(uri.toString()); }
-  get size() { return this.#edits.size; }
-  entries() { return [...this.#edits.values()].map(({ uri, edits }) => [uri, edits]); }
-}
-export class TextDocument {
-  constructor(data) { this.update(data); }
-  update(data) { this.uri = Uri.parse(data.uri); this.fileName = data.path ?? this.uri.path; this.languageId = data.languageId ?? 'plaintext'; this.version = data.version ?? 1; this.isDirty = data.isDirty ?? false; this.isUntitled = this.uri.scheme === 'untitled'; this.isClosed = false; this.text = data.text ?? ''; this.eol = this.text.includes('\r\n') ? 2 : 1; this.starts = [0]; for (let i = 0; i < this.text.length; i++) if (this.text[i] === '\n') this.starts.push(i + 1); }
-  get lineCount() { return this.starts.length; }
-  getText(range) { return range ? this.text.slice(this.offsetAt(range.start), this.offsetAt(range.end)) : this.text; }
-  lineAt(line) {
-    line = typeof line === 'number' ? line : line.line;
-    if (!Number.isInteger(line) || line < 0 || line >= this.lineCount) throw new RangeError('Line out of range.');
-    const start = this.starts[line], next = this.starts[line + 1] ?? this.text.length; let end = next;
-    if (this.text[end - 1] === '\n') end--; if (this.text[end - 1] === '\r') end--;
-    const text = this.text.slice(start, end), range = new Range(line, 0, line, text.length);
-    return { lineNumber: line, text, range, rangeIncludingLineBreak: line + 1 < this.lineCount ? new Range(line, 0, line + 1, 0) : range, firstNonWhitespaceCharacterIndex: text.length - text.trimStart().length, isEmptyOrWhitespace: !text.trim() };
-  }
-  offsetAt(position) { const line = Math.max(0, Math.min(this.lineCount - 1, position.line)); return this.starts[line] + Math.max(0, Math.min(this.lineAt(line).text.length, position.character)); }
-  positionAt(offset) { offset = Math.max(0, Math.min(this.text.length, offset)); let lo = 0, hi = this.starts.length; while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (this.starts[mid] <= offset) lo = mid; else hi = mid; } return new Position(lo, offset - this.starts[lo]); }
-  validatePosition(position) { return this.positionAt(this.offsetAt(position)); }
-  validateRange(range) { return new Range(this.validatePosition(range.start), this.validatePosition(range.end)); }
-  getWordRangeAtPosition(position, regex = /[\p{L}\p{N}_$]+/gu) { const line = this.lineAt(position.line); const flags = regex.flags.includes('g') ? regex.flags : regex.flags + 'g'; for (const match of line.text.matchAll(new RegExp(regex.source, flags))) if (match[0].length && position.character >= match.index && position.character <= match.index + match[0].length) return new Range(position.line, match.index, position.line, match.index + match[0].length); }
-}
+import * as Language from './language-features.mjs';
+import { createConfiguration } from './configuration.mjs';
+/** MIT. An explicit VS Code API subset. Executed extensions are trusted code, not sandboxed content. */
+import { Disposable, EventEmitter, Position, Range, Selection, Uri, TextEdit, WorkspaceEdit, TextDocument } from './api-types.mjs';
+export { Disposable, EventEmitter, Position, Range, Selection, Uri, TextEdit, WorkspaceEdit, TextDocument } from './api-types.mjs';
 function strictApi(name, target) { return new Proxy(target, { get(object, key, receiver) { if (typeof key === 'symbol' || key === 'then' || key in object) return Reflect.get(object, key, receiver); throw new Error(`CodeSpace does not implement vscode.${name ? name + '.' : ''}${key}. See docs/compatibility.md.`); } }); }
 function normalizePath(path) { const result = []; for (const part of path.replaceAll('\\', '/').split('/')) { if (part === '..') { if (!result.length) throw new Error('Module path escapes extension.'); result.pop(); } else if (part && part !== '.') result.push(part); } return result.join('/'); }
 const encodeBytes = bytes => typeof Buffer !== 'undefined' ? Buffer.from(bytes).toString('base64') : btoa(Array.from(bytes, b => String.fromCharCode(b)).join(''));
@@ -106,6 +11,7 @@ const decodeBytes = base64 => typeof Buffer !== 'undefined' ? new Uint8Array(Buf
 export function createExtensionHost(send, { browser = true, externalRequire, requestTimeout = 30000 } = {}) {
   if (typeof send !== 'function') throw new TypeError('A message transport is required.');
   const commands = new Map(), documents = new Map(), extensions = new Map(), pending = new Map();
+  const selectionChanged = new EventEmitter();
   const opened = new EventEmitter(), changed = new EventEmitter(), closed = new EventEmitter(), activeChanged = new EventEmitter(), configChanged = new EventEmitter();
   let sequence = 0, activeUri, workspaceName = 'workspace', disposed = false;
   const request = (method, params) => new Promise((resolve, reject) => {
@@ -115,14 +21,37 @@ export function createExtensionHost(send, { browser = true, externalRequire, req
     pending.set(id, { resolve, reject, timer }); send({ type: 'request', id, method, params });
   });
   const documentFor = uri => { const key = typeof uri === 'string' ? uri : uri.toString(); const document = documents.get(key); if (!document) throw new Error('Document is not open: ' + key); return document; };
-  const editDocument = async (document, edits) => request('workspace.applyEdits', { uri: document.uri.toString(), edits: edits.map(edit => ({ start: document.offsetAt(edit.range.start), length: document.offsetAt(edit.range.end) - document.offsetAt(edit.range.start), text: edit.newText })) });
-  const editorFor = document => ({
-    document, selection: new Selection(0, 0, 0, 0), selections: [new Selection(0, 0, 0, 0)], options: { tabSize: 4, insertSpaces: true }, viewColumn: 1,
-    edit: callback => { const edits = []; callback({ replace: (range, text) => edits.push(TextEdit.replace(range, text)), insert: (position, text) => edits.push(TextEdit.insert(position, text)), delete: range => edits.push(TextEdit.delete(range)) }); return editDocument(document, edits); }
-  });
+  const editDocument = async (document, edits) => request('workspace.applyEdits', { uri: document.uri.toString(), version: document.version, edits: edits.map(edit => ({ start: document.offsetAt(edit.range.start), length: document.offsetAt(edit.range.end) - document.offsetAt(edit.range.start), text: edit.newText })) });
+  const editorCache = new Map();
+  const editorFor = document => {
+    const key = document.uri.toString(); if (editorCache.has(key)) return editorCache.get(key);
+    let selections = [new Selection(0, 0, 0, 0)];
+    const editor = {
+      document, get selection() { return selections[0]; }, set selection(value) { this.selections = [value]; },
+      get selections() { return [...selections]; }, set selections(values) {
+        if (!Array.isArray(values) || values.length === 0 || values.some(s => !(s instanceof Selection))) throw new TypeError('Expected a nonempty Selection array.');
+        const offsets = values.map(s => ({ anchor: document.offsetAt(s.anchor), active: document.offsetAt(s.active) }));
+        request('window.setSelections', { uri: key, selections: offsets, version: document.version }).catch(error => send({ type: 'error', message: error.message }));
+      },
+      _sync(values) {
+        const next = values?.length ? values.map(s => new Selection(document.positionAt(s.anchor), document.positionAt(s.active))) : selections;
+        if (JSON.stringify(next) !== JSON.stringify(selections)) { selections = next; selectionChanged.fire({ textEditor: editor, selections: [...next], kind: undefined }); }
+      },
+      options: { tabSize: 4, insertSpaces: true }, viewColumn: 1,
+      edit: callback => { const edits = []; callback({ replace: (range, text) => edits.push(TextEdit.replace(range, text)), insert: (position, text) => edits.push(TextEdit.insert(position, text)), delete: range => edits.push(TextEdit.delete(range)) }); return editDocument(document, edits); }
+    };
+    editorCache.set(key, editor); return editor;
+  };
+  const configuration = createConfiguration(request, configChanged);
+  const language = Language.createLanguageFeatures({ send, documentFor, Position, Range, Uri, Disposable });
   const api = strictApi('', {
-    version: '1.90.0', // Declared API shape baseline, not an assertion of full compatibility.
+    version: '1.90.0',
     Disposable, EventEmitter, Position, Range, Selection, Uri, TextEdit, WorkspaceEdit,
+    CompletionItem: Language.CompletionItem, CompletionList: Language.CompletionList, CompletionItemKind: Language.CompletionItemKind,
+    MarkdownString: Language.MarkdownString, Hover: Language.Hover, Location: Language.Location, DocumentSymbol: Language.DocumentSymbol,
+    SymbolKind: Language.SymbolKind, Diagnostic: Language.Diagnostic, DiagnosticSeverity: Language.DiagnosticSeverity,
+    CancellationTokenSource: Language.CancellationTokenSource, ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
+    languages: strictApi('languages', language.languages),
     EndOfLine: { LF: 1, CRLF: 2 }, ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3 },
     FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
     StatusBarAlignment: { Left: 1, Right: 2 }, ExtensionMode: { Production: 1, Development: 2, Test: 3 }, UIKind: { Desktop: 1, Web: 2 },
@@ -143,8 +72,16 @@ export function createExtensionHost(send, { browser = true, externalRequire, req
       async openTextDocument(value) { return documentFor(value); },
       asRelativePath(uri) { return (typeof uri === 'string' ? uri.replace(/^codespace:\/\//, '') : uri.path).replace(/^\//, ''); },
       getWorkspaceFolder(uri) { return uri.scheme === 'codespace' ? { uri: new Uri('codespace', '', '/'), name: workspaceName, index: 0 } : undefined; },
-      getConfiguration(section = '') { return { get: (name, defaultValue) => defaultValue, has: () => false, inspect: () => undefined, update: () => Promise.reject(new Error('Persistent configuration API is not implemented.')) }; },
-      async applyEdit(edit) { if (!(edit instanceof WorkspaceEdit)) throw new TypeError('Expected WorkspaceEdit.'); if (edit.size > 1) throw new Error('Atomic multi-document WorkspaceEdit is not yet implemented.'); for (const [uri, edits] of edit.entries()) if (!await editDocument(documentFor(uri), edits)) return false; return true; },
+      getConfiguration: configuration.getConfiguration,
+      async applyEdit(edit) {
+        if (!(edit instanceof WorkspaceEdit)) throw new TypeError('Expected WorkspaceEdit.');
+        if (edit.size <= 1) { for (const [uri, edits] of edit.entries()) if (!await editDocument(documentFor(uri), edits)) return false; return true; }
+        const documents = edit.entries().map(([uri, edits]) => {
+          const document = documentFor(uri);
+          return { uri: uri.toString(), version: document.version, edits: edits.map(edit => ({ start: document.offsetAt(edit.range.start), length: document.offsetAt(edit.range.end) - document.offsetAt(edit.range.start), text: edit.newText })) };
+        });
+        return request('workspace.applyWorkspaceEdit', { documents });
+      },
       fs: strictApi('workspace.fs', {
         async readFile(uri) { return decodeBytes(await request('workspace.readFile', { uri: uri.toString() })); },
         async writeFile(uri, bytes) { await request('workspace.writeFile', { uri: uri.toString(), data: encodeBytes(bytes) }); },
@@ -156,6 +93,7 @@ export function createExtensionHost(send, { browser = true, externalRequire, req
       get activeTextEditor() { return activeUri && documents.has(activeUri) ? editorFor(documents.get(activeUri)) : undefined; },
       get visibleTextEditors() { return this.activeTextEditor ? [this.activeTextEditor] : []; },
       onDidChangeActiveTextEditor: activeChanged.event,
+      onDidChangeTextEditorSelection: selectionChanged.event,
       async showInformationMessage(message, ...items) { if (items.length) throw new Error('Notification action items are not implemented.'); await request('window.showInformationMessage', { message }); },
       async showWarningMessage(message, ...items) { if (items.length) throw new Error('Notification action items are not implemented.'); await request('window.showWarningMessage', { message }); },
       async showErrorMessage(message, ...items) { if (items.length) throw new Error('Notification action items are not implemented.'); await request('window.showErrorMessage', { message }); },
@@ -193,14 +131,17 @@ export function createExtensionHost(send, { browser = true, externalRequire, req
     if (!message || typeof message.type !== 'string') throw new TypeError('Invalid extension host message.');
     if (message.type === 'response') { const entry = pending.get(message.id); if (!entry) return; pending.delete(message.id); clearTimeout(entry.timer); message.error ? entry.reject(new Error(message.error)) : entry.resolve(message.result); return; }
     if (disposed) throw new Error('Extension host is disposed.');
-    if (message.type === 'workspace') {
+    if (message.type === 'featureRequest' || message.type === 'featureCancel') return language.handle(message);
+    if (message.type === 'configuration') { configuration.update(message); return; }
+    if (message.type === 'workspace' || message.type === 'workspaceDelta') {
       workspaceName = message.name ?? 'workspace'; const seen = new Set();
       for (const data of message.documents ?? []) {
         seen.add(data.uri); const existing = documents.get(data.uri);
-        if (existing) { const previousVersion = existing.version; const previousText = existing.text; existing.update(data); if (existing.version !== previousVersion || existing.text !== previousText) changed.fire({ document: existing, contentChanges: [{ rangeOffset: 0, rangeLength: previousText.length, text: existing.text }] }); }
+        if (existing) { const previousVersion = existing.version; const previousText = existing.text; const previousEnd = existing.positionAt(previousText.length); const previousDirty = existing.isDirty; existing.update(data); if (existing.version !== previousVersion || existing.text !== previousText || previousDirty !== existing.isDirty) changed.fire({ document: existing, contentChanges: previousText === existing.text ? [] : [{ range: new Range(new Position(0, 0), previousEnd), rangeOffset: 0, rangeLength: previousText.length, text: existing.text }] }); }
         else { const document = new TextDocument(data); documents.set(data.uri, document); opened.fire(document); }
       }
-      for (const [uri, document] of documents) if (!seen.has(uri)) { document.isClosed = true; documents.delete(uri); closed.fire(document); }
+      for (const [uri, document] of documents) if (message.type === 'workspace' ? !seen.has(uri) : message.deleted?.includes(uri)) { document.isClosed = true; documents.delete(uri); editorCache.delete(uri); closed.fire(document); }
+      for (const state of message.selections ?? []) if (documents.has(state.uri)) editorFor(documents.get(state.uri))._sync(state.values);
       if (activeUri !== message.activeUri) { activeUri = message.activeUri; activeChanged.fire(api.window.activeTextEditor); } return;
     }
     if (message.type === 'activate') {
@@ -221,6 +162,6 @@ export function createExtensionHost(send, { browser = true, externalRequire, req
     if (message.type === 'deactivate') { await deactivate(message.id); return; }
     throw new Error('Unknown extension host message: ' + message.type);
   }
-  async function dispose() { for (const id of [...extensions.keys()]) await deactivate(id); disposed = true; for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Extension host disposed.')); } pending.clear(); for (const event of [opened, changed, closed, activeChanged, configChanged]) event.dispose(); }
-  return { handle, dispose, api, capabilities: Object.freeze({ universalCompatibility: false, browser, commonjs: true, commands: true, textDocuments: true, workspaceEdits: 'single-document', webviews: false, languageProviders: false, debugging: false, terminal: false, textmate: false }) };
+  async function dispose() { for (const id of [...extensions.keys()]) await deactivate(id); language.dispose(); disposed = true; for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Extension host disposed.')); } pending.clear(); for (const event of [opened, changed, closed, activeChanged, configChanged, selectionChanged]) event.dispose(); }
+  return { handle, dispose, api, capabilities: Object.freeze({ universalCompatibility: false, browser, commonjs: true, commands: true, textDocuments: true, workspaceEdits: 'atomic-text-multi-document', webviews: false, languageProviders: true, debugging: false, terminal: false, textmate: false }) };
 }

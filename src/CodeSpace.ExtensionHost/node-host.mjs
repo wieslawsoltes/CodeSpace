@@ -11,7 +11,7 @@ input.on('line', line => {
   if (line.length > 128 * 1024 * 1024) { report(new Error('Host message too large.')); return; }
   try {
     const message = JSON.parse(line);
-    if (message.type === 'response' || message.type === 'workspace') Promise.resolve(host.handle(message)).catch(report);
+    if (['response', 'workspace', 'workspaceDelta', 'configuration', 'featureRequest', 'featureCancel'].includes(message.type)) Promise.resolve(host.handle(message)).catch(report);
     else operations = operations.then(() => host.handle(message)).catch(report);
   } catch (error) { report(error); }
 });

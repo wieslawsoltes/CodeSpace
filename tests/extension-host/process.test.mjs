@@ -20,8 +20,7 @@ async function startHost(t) {
     messages.push(message);
     if (message.type === 'request') {
       requests.push(message);
-      // This is an isolated process/transport test, not a desktop UI test.
-      // Reply outside the host's serialized activation queue, as the Uno adapter does.
+      // Isolated process/transport test, not a desktop UI test.
       send({ type: 'response', id: message.id, result: message.method === 'workspace.applyEdits' ? true : null });
     }
     for (const waiter of [...waiters]) if (waiter.predicate(message)) { clearTimeout(waiter.timer); waiters.delete(waiter); waiter.resolve(message); }
@@ -54,7 +53,6 @@ test('Node process activation awaits UI RPC, resolves builtins, and disposes com
       context.subscriptions.push(vscode.commands.registerCommand('process.basename', value => path.basename(value)));
     };
   `);
-  // Deliberately queue execution while activation is awaiting its UI response.
   host.send({ type: 'execute', command: 'process.basename', args: ['src/Program.cs'] });
   const result = await host.waitFor(message => message.type === 'result' && message.command === 'process.basename');
   assert.equal(result.result, 'Program.cs');
@@ -76,7 +74,7 @@ test('Node process document edits preserve UTF-16 offsets across the wire', { ti
   const result = await host.waitFor(message => message.type === 'result' && message.command === 'process.edit');
   assert.equal(result.result, true);
   assert.deepEqual(host.requests.find(request => request.method === 'workspace.applyEdits').params,
-    { uri: 'codespace:///a.cs', edits: [{ start: 1, length: 2, text: 'X' }] });
+    { uri: 'codespace:///a.cs', version: 1, edits: [{ start: 1, length: 2, text: 'X' }] });
 });
 
 test('Node process rejects untrusted activation and remains usable after unsupported APIs', { timeout: 10000 }, async t => {

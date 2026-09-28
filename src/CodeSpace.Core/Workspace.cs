@@ -8,9 +8,15 @@ public sealed class WorkspaceFile
     public string Path { get; }
     public TextBuffer Buffer { get; set; }
     public string SavedText { get; private set; }
-    public bool IsDirty => Buffer.ToString() != SavedText;
-    public WorkspaceFile(string path, string text) { Path = Workspace.NormalizePath(path); Buffer = new TextBuffer(text); SavedText = text; }
-    public void MarkSaved() => SavedText = Buffer.ToString();
+    public TextBuffer SavedBuffer { get; private set; }
+    public bool IsDirty => !ReferenceEquals(Buffer, SavedBuffer);
+    public WorkspaceFile(string path, string text) { Path = Workspace.NormalizePath(path); Buffer = new TextBuffer(text); SavedBuffer = Buffer; SavedText = text; }
+    public void MarkSaved() => MarkSaved(Buffer);
+    public void MarkSaved(TextBuffer snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        SavedText = snapshot.ToString(); SavedBuffer = snapshot;
+    }
 }
 public sealed record SearchHit(string Path, int Line, int Column, int Length, string Preview);
 public sealed record WorkspaceSnapshot(int SchemaVersion, string Name, Dictionary<string, string> Files);
@@ -43,7 +49,8 @@ public sealed class Workspace
         path = NormalizePath(path); destination = NormalizePath(destination);
         if (!_files.TryGetValue(path, out var file)) throw new FileNotFoundException(path);
         if (_files.ContainsKey(destination)) throw new InvalidOperationException("The destination exists.");
-        var result = new WorkspaceFile(destination, file.SavedText) { Buffer = file.Buffer };
+        var result = new WorkspaceFile(destination, file.SavedText);
+        if (file.IsDirty) result.Buffer = file.Buffer;
         _files.Remove(path); _files[destination] = result; Changed?.Invoke(this, EventArgs.Empty); return result;
     }
     public IReadOnlyList<SearchHit> Search(string query, bool matchCase = false, bool regex = false, int limit = 2000, CancellationToken cancellation = default)
@@ -88,6 +95,8 @@ public sealed class CommandRegistry
     private readonly Dictionary<string, Command> _commands = new(StringComparer.Ordinal);
     public IEnumerable<Command> All => _commands.Values;
     public void Register(Command command) => _commands[command.Id] = command;
+    public bool Unregister(string id) => _commands.Remove(id);
+    public bool Contains(string id) => _commands.ContainsKey(id);
     public bool Execute(string id) { if (!_commands.TryGetValue(id, out var command)) return false; command.Execute(); return true; }
     public IReadOnlyList<Command> Search(string query, int limit = 50) => _commands.Values.Select(c => (Command: c, Score: FuzzyScore(c.Title, query)))
         .Where(x => x.Score >= 0).OrderByDescending(x => x.Score).ThenBy(x => x.Command.Title).Take(limit).Select(x => x.Command).ToArray();

@@ -3,8 +3,8 @@ const host = createExtensionHost(message => postMessage(message), { browser: tru
 let operations = Promise.resolve();
 self.onmessage = event => {
   const message = event.data;
-  // RPC responses must bypass the operation queue: activation can await a UI request.
-  if (message?.type === 'response' || message?.type === 'workspace') {
+  // Requests that may complete an activation/provider must not queue behind it.
+  if (['response', 'workspace', 'workspaceDelta', 'configuration', 'featureRequest', 'featureCancel'].includes(message?.type)) {
     Promise.resolve(host.handle(message)).catch(report);
   } else operations = operations.then(() => host.handle(message)).catch(report);
 };
