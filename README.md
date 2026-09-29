@@ -5,6 +5,8 @@
 [![Build and test](https://github.com/wieslawsoltes/CodeSpace/actions/workflows/build.yml/badge.svg)](https://github.com/wieslawsoltes/CodeSpace/actions/workflows/build.yml)
 [![Browser and Pages](https://github.com/wieslawsoltes/CodeSpace/actions/workflows/pages.yml/badge.svg)](https://github.com/wieslawsoltes/CodeSpace/actions/workflows/pages.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Core.svg?label=NuGet)](https://www.nuget.org/packages/CodeSpace.Core)
+[![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Core.svg)](https://www.nuget.org/packages/CodeSpace.Core)
 
 [**Open the browser workbench**](https://wieslawsoltes.github.io/CodeSpace/) · [Architecture](docs/architecture.md) · [Compatibility](docs/compatibility.md) · [Performance measurements](docs/performance.md) · [Build and release](docs/building.md)
 
@@ -51,23 +53,117 @@ Every [release](https://github.com/wieslawsoltes/CodeSpace/releases/latest) ship
 
 Extract and run `CodeSpace` (`CodeSpace.exe` on Windows). Builds are not code-signed yet: on macOS clear the quarantine flag with `xattr -d com.apple.quarantine CodeSpace`; on Windows choose **More info → Run anyway** in SmartScreen. Verify downloads against `SHA256SUMS.txt`. Node.js is optional (for the local extension host) and not bundled.
 
-The .NET libraries below are published to [NuGet.org](https://www.nuget.org/packages?q=CodeSpace), e.g. `dotnet add package CodeSpace.Core`.
+## NuGet packages
 
-## Independently reusable packages
+CodeSpace ships as eight MIT-licensed .NET packages on [NuGet.org](https://www.nuget.org/packages?q=CodeSpace), versioned together and published by release tags with symbol packages (`.snupkg`) and SourceLink. The six engine packages target `net10.0` and have no UI dependency (only `CodeSpace.Rendering.Skia` needs SkiaSharp); the two Uno packages target `net10.0-desktop` and `net10.0-browserwasm`, and CI verifies that both target assemblies are in each package. Engines do not depend on the sample application. The JavaScript extension host (`src/CodeSpace.ExtensionHost`, `@codespace/extension-host`) is not on NuGet or the npm registry; it is attached to each GitHub Release as an archive.
 
-| Package | Responsibility | UI dependency |
-|---|---|---|
-| CodeSpace.Core | Persistent text, virtual workspace, commands, configuration | None |
-| CodeSpace.Editor | Transactions, selections, history, folding indexes | None |
-| CodeSpace.Docking | Immutable split/tab layouts and persistence | None |
-| CodeSpace.Languages | Tokenizer and lexical services | None |
-| CodeSpace.Extensions | VSIX inspection, compatibility reports, RPC framing | None |
-| CodeSpace.Rendering.Skia | Editor renderer and viewport | SkiaSharp |
-| CodeSpace.Controls.Uno | Editor, tree, tabs, splitter, activity bar, quick pick | Uno |
-| CodeSpace.Workbench.Uno | Composable workbench and platform adapter contract | Uno |
-| @codespace/extension-host | Browser/Node extension runtime and provider adapters | None |
+Embed `EditorRenderer` on a caller-owned `SKCanvas`, `CodeEditorControl` in a Uno app, or the whole `WorkbenchView` with your own `IWorkbenchPlatform` storage and extension transport.
 
-CI verifies the actual contents of eight NuGet packages and one npm archive, including both target assemblies in the Uno packages. Version tags publish the eight NuGet packages (with symbols) to NuGet.org; the npm extension host is attached to the GitHub Release as an archive and is not published to the npm registry. Engines do not depend on the sample application.
+```sh
+dotnet add package CodeSpace.Core
+```
+
+| Package | Version | Downloads | Description |
+| --- | --- | --- | --- |
+| [CodeSpace.Core](https://www.nuget.org/packages/CodeSpace.Core) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Core.svg)](https://www.nuget.org/packages/CodeSpace.Core) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Core.svg)](https://www.nuget.org/packages/CodeSpace.Core) | Persistent rope text buffers, virtual workspace, commands and JSONC configuration |
+| [CodeSpace.Docking](https://www.nuget.org/packages/CodeSpace.Docking) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Docking.svg)](https://www.nuget.org/packages/CodeSpace.Docking) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Docking.svg)](https://www.nuget.org/packages/CodeSpace.Docking) | Immutable split/tab editor-group layouts and layout persistence |
+| [CodeSpace.Editor](https://www.nuget.org/packages/CodeSpace.Editor) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Editor.svg)](https://www.nuget.org/packages/CodeSpace.Editor) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Editor.svg)](https://www.nuget.org/packages/CodeSpace.Editor) | Editing transactions, multi-selections, undo/redo history and folding indexes |
+| [CodeSpace.Languages](https://www.nuget.org/packages/CodeSpace.Languages) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Languages.svg)](https://www.nuget.org/packages/CodeSpace.Languages) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Languages.svg)](https://www.nuget.org/packages/CodeSpace.Languages) | Incremental tokenizer and lexical services (symbols, completions, diagnostics, folding) |
+| [CodeSpace.Extensions](https://www.nuget.org/packages/CodeSpace.Extensions) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Extensions.svg)](https://www.nuget.org/packages/CodeSpace.Extensions) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Extensions.svg)](https://www.nuget.org/packages/CodeSpace.Extensions) | VSIX inspection, VS Code API compatibility reports and extension-host RPC framing |
+| [CodeSpace.Rendering.Skia](https://www.nuget.org/packages/CodeSpace.Rendering.Skia) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Rendering.Skia.svg)](https://www.nuget.org/packages/CodeSpace.Rendering.Skia) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Rendering.Skia.svg)](https://www.nuget.org/packages/CodeSpace.Rendering.Skia) | SkiaSharp editor renderer and viewport: cached line layout, highlighting, selections and caret |
+| [CodeSpace.Controls.Uno](https://www.nuget.org/packages/CodeSpace.Controls.Uno) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Controls.Uno.svg)](https://www.nuget.org/packages/CodeSpace.Controls.Uno) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Controls.Uno.svg)](https://www.nuget.org/packages/CodeSpace.Controls.Uno) | Uno editor, input bridge, explorer, activity bar, tabs, splitter and quick-pick controls |
+| [CodeSpace.Workbench.Uno](https://www.nuget.org/packages/CodeSpace.Workbench.Uno) | [![NuGet](https://img.shields.io/nuget/vpre/CodeSpace.Workbench.Uno.svg)](https://www.nuget.org/packages/CodeSpace.Workbench.Uno) | [![Downloads](https://img.shields.io/nuget/dt/CodeSpace.Workbench.Uno.svg)](https://www.nuget.org/packages/CodeSpace.Workbench.Uno) | Composable VS Code-style workbench and the `IWorkbenchPlatform` adapter contract |
+
+Dependencies follow the real project references: `Core ← Editor`, `Core ← Languages`, `Core ← Extensions`, `Editor + Languages ← Rendering.Skia`, `Rendering.Skia + Docking ← Controls.Uno`, `Controls.Uno + Extensions ← Workbench.Uno`; `Docking` stands alone.
+
+### CodeSpace.Core
+
+The text and workspace engine: an immutable AVL-rope `TextBuffer` with indexed line lookup and structural sharing, a virtual in-memory `Workspace` with search and JSON backups, a fuzzy `CommandRegistry` and layered JSONC settings. Use it for any headless text-processing or document model. No dependencies and no UI.
+
+```sh
+dotnet add package CodeSpace.Core
+```
+
+**Key types**
+
+- `TextBuffer` — persistent text; `Replace`/`Apply` return new buffers, plus `GetLine`, `PositionAt`, `OffsetAt`, `Slice`.
+- `Workspace` / `WorkspaceFile` — virtual files with dirty tracking, `Search`, `Serialize`/`Deserialize`.
+- `CommandRegistry` / `Command` — registered commands with fuzzy `Search` and `Execute`.
+- `EditorConfiguration` — default/user/workspace settings resolved into `EditorOptions`.
+
+**Usage**
+
+```csharp
+using CodeSpace.Core;
+
+var buffer = new TextBuffer("line one\nline two\n");
+TextBuffer edited = buffer.Replace(5, 3, "1");    // `buffer` still holds the original text
+Console.WriteLine(edited.GetLine(0).Text);         // line 1
+
+var workspace = new Workspace { Name = "example" };
+workspace.Add("src/hello.cs", "class Hello {}\n");
+foreach (var hit in workspace.Search("Hello"))
+    Console.WriteLine($"{hit.Path}:{hit.Line + 1} {hit.Preview}");
+var restored = Workspace.Deserialize(workspace.Serialize());
+
+var commands = new CommandRegistry();
+commands.Register(new Command("demo.hello", "Say Hello", "Ctrl+Alt+H", () => Console.WriteLine("Hello")));
+commands.Execute(commands.Search("hello")[0].Id);
+
+var settings = new EditorConfiguration();
+settings.LoadWorkspace("{ \"editor.fontSize\": 16, // JSONC\n }");
+EditorOptions options = settings.Options;          // FontSize = 16
+```
+
+### CodeSpace.Docking
+
+An immutable model of editor groups: tab groups inside nested horizontal/vertical splits, side bar and panel sizes, and JSON persistence. Hosts decide how to present each node, so it can back any UI framework. No dependencies and no UI.
+
+```sh
+dotnet add package CodeSpace.Docking
+```
+
+**Key types**
+
+- `DockLayout` — mutable façade over the current `DockState`: `Open`, `Close`, `Split`, `Move`, `Resize`, `Serialize`/`Restore`, `Changed`.
+- `DockState` — root node plus side bar/panel dimensions and visibility.
+- `DockNode`, `TabGroup`, `SplitNode`, `SplitAxis` — the immutable layout tree.
+
+**Usage**
+
+```csharp
+using CodeSpace.Docking;
+
+var layout = new DockLayout();
+layout.Open("README.md");
+layout.Open("src/Program.cs");
+string right = layout.Split("primary", SplitAxis.Horizontal, "src/Program.cs");
+layout.SetPanel(visible: false);
+
+foreach (TabGroup group in layout.Groups)
+    Console.WriteLine($"{group.Id}: {string.Join(", ", group.Tabs)} (active {group.ActiveTab})");
+
+string json = layout.Serialize();
+var restored = new DockLayout();
+restored.Restore(json);
+```
+
+### CodeSpace.Editor
+
+The editing engine for one document: multiple and rectangular selections, grapheme-aware movement and deletion, autoindent, comments, find/replace, structurally shared undo/redo, folding indexes and version-checked multi-document transactions. Use it to drive any editor surface or to script edits. Depends on `CodeSpace.Core`; no UI.
+
+```sh
+dotnet add package CodeSpace.Editor
+```
+
+**Key types**
+
+- `EditorSession` — selections, `Insert`, `Delete`, `Move`, `Find`, `ReplaceAll`, `AddNextOccurrence`, `ToggleLineComment`, `Undo`/`Redo`, `Changed`.
+- `Selection` — anchor/active pair (`Start`, `End`, `Length`).
+- `FoldingState` — collapsed regions with line↔visual-row mapping.
+- `WorkspaceEditTransaction` / `DocumentEditBatch` — atomic edits across several documents.
+
+**Usage**
 
 ```csharp
 using CodeSpace.Core;
@@ -79,9 +175,208 @@ var editor = new EditorSession(file);
 editor.Select(6, 11);
 editor.Insert("World");
 editor.Undo();
+
+editor.Select(0, 0);
+editor.AddNextOccurrence();                        // Ctrl+D-style multi-selection
+int replaced = editor.ReplaceAll("Hello", "Greeter");
+Console.WriteLine($"{replaced} replaced, dirty: {editor.IsDirty}");
+
+// Version-checked edit spanning several open documents
+WorkspaceEditTransaction.Apply([new DocumentEditBatch(editor, [new TextEdit(0, 0, "// header\n")], editor.Version)]);
 ```
 
-Embed EditorRenderer on a caller-owned SKCanvas, CodeEditorControl in a Uno app, or the whole WorkbenchView with your own IWorkbenchPlatform storage/extension transport.
+### CodeSpace.Languages
+
+Lexical language services for C#, JavaScript, TypeScript, JSON, Python, HTML, XML/XAML, CSS, Markdown, YAML, shell and plain text: a stateful tokenizer with incremental re-tokenization, plus declaration symbols, word completions, bracket diagnostics and folding ranges. These are lexical services, not compiler-backed IntelliSense. Depends on `CodeSpace.Core`; no UI.
+
+```sh
+dotnet add package CodeSpace.Languages
+```
+
+**Key types**
+
+- `LanguageCatalog` — built-in `LanguageDefinition`s by path (`ForPath`) or id (`ForId`).
+- `SyntaxLexer.Tokenize` — tokenizes a line, carrying a `LexerState` across lines.
+- `IncrementalSyntaxDocument` / `SyntaxDocument` — cached per-line `TokenizedLine`s for a `TextBuffer`.
+- `LanguageServices` — `Symbols`, `Complete`, `Diagnostics` and `FoldingRanges`.
+
+**Usage**
+
+```csharp
+using CodeSpace.Core;
+using CodeSpace.Languages;
+
+var buffer = new TextBuffer("namespace Demo;\nclass Hello\n{\n    void Run() { }\n");
+var syntax = new SyntaxDocument("Hello.cs");        // language chosen from the extension
+foreach (SyntaxToken token in syntax.GetLine(buffer, 1).Tokens)
+    Console.WriteLine($"{token.Kind}: {buffer.GetLine(1).Text.Substring(token.Start, token.Length)}");
+
+foreach (var symbol in LanguageServices.Symbols(buffer))
+    Console.WriteLine($"{symbol.Kind} {symbol.Name} (line {symbol.Line + 1})");
+foreach (var problem in LanguageServices.Diagnostics(buffer, "Hello.cs"))
+    Console.WriteLine($"{problem.Severity}: {problem.Message} at {problem.Line + 1}:{problem.Character + 1}");
+IReadOnlyList<string> words = LanguageServices.Complete(buffer, "Ru", "csharp");
+```
+
+### CodeSpace.Extensions
+
+Host-side VS Code extension support: bounded VSIX reading (size and entry limits, no execution), manifest parsing, host selection (browser worker, Node process, declarative) and compatibility reports, plus Content-Length JSON-RPC framing and the `IExtensionBridge` transport contract. Depends on `CodeSpace.Core`; no UI. Extensions are trusted executable code; this package only inspects them.
+
+```sh
+dotnet add package CodeSpace.Extensions
+```
+
+**Key types**
+
+- `ExtensionPackage.Read` — reads a `.vsix` stream into a `Manifest` and bounded `Files`.
+- `ExtensionManifest` — parsed `package.json` (`Parse`, `SelectHost`, `Commands`).
+- `ExtensionCompatibility.Inspect` — `ExtensionCapabilityReport` with host, trust and limitations.
+- `JsonRpcFraming` — `WriteAsync`/`ReadAsync` of framed JSON messages on a `Stream`.
+- `IExtensionBridge` — transport implemented by hosts (worker, Node process).
+
+**Usage**
+
+```csharp
+using CodeSpace.Extensions;
+
+await using var vsix = File.OpenRead("hello-0.1.0.vsix");
+var package = ExtensionPackage.Read(vsix);           // inspected, never executed
+ExtensionManifest manifest = package.Manifest;
+foreach (var command in manifest.Commands)
+    Console.WriteLine($"{command.Command}: {command.Title}");
+
+var report = ExtensionCompatibility.Inspect(manifest, browser: true);
+Console.WriteLine($"{report.ExtensionId} -> {report.Host}, trust required: {report.RequiresTrust}");
+foreach (var limitation in report.Limitations) Console.WriteLine("  " + limitation);
+
+using var stream = new MemoryStream();
+await JsonRpcFraming.WriteAsync(stream, new { jsonrpc = "2.0", method = "initialize", id = 1 });
+```
+
+### CodeSpace.Rendering.Skia
+
+The editor renderer: draws an `EditorSession` onto any caller-owned `SKCanvas` with cached positioned-text line layouts, syntax colors, selections, caret, find matches, diagnostics, folding gutter, whitespace and minimap, and maps points back to text offsets. Use it to render code outside Uno (images, other UI toolkits). Depends on Editor, Languages and SkiaSharp 3.119; no UI framework.
+
+```sh
+dotnet add package CodeSpace.Rendering.Skia
+```
+
+**Key types**
+
+- `EditorRenderer` — `Draw`, `HitTest`, `EnsureCaretVisible`, `Theme`, `Metrics`; `DefaultTypeface` for the font.
+- `EditorViewport` — scroll, font size, minimap/whitespace/line-number toggles, `Folding`, `FindMatches`, `Diagnostics`.
+- `EditorTheme` — background, gutter, selection and per-`TokenKind` colors.
+- `RenderMetrics` — visible/cached lines, glyphs and draw calls of the last frame.
+
+**Usage**
+
+```csharp
+using CodeSpace.Core;
+using CodeSpace.Editor;
+using CodeSpace.Rendering.Skia;
+using SkiaSharp;
+
+var file = new Workspace().Add("src/hello.cs", "class Hello\n{\n    void Run() { }\n}\n");
+var session = new EditorSession(file);
+var view = new EditorViewport { FontSize = 15, ShowMinimap = false };
+
+using var renderer = new EditorRenderer();
+using var surface = SKSurface.Create(new SKImageInfo(800, 300));
+renderer.Draw(surface.Canvas, new SKRect(0, 0, 800, 300), session, view);
+Console.WriteLine($"{renderer.Metrics.VisibleLines} lines, {renderer.Metrics.TextDrawCalls} text calls");
+
+int offset = renderer.HitTest(session, view, 120, 30);   // pointer -> text offset
+using var png = surface.Snapshot().Encode(SKEncodedImageFormat.Png, 100);
+File.WriteAllBytes("hello.png", png.ToArray());
+```
+
+### CodeSpace.Controls.Uno
+
+Custom Uno Platform controls built on the engines: `CodeEditorControl` (Skia editor surface with a hidden text-input bridge, find box, folding and clipboard), the virtualized `FileTreeControl`, `EditorTabs`, `ActivityBar`, `QuickPickControl`, `DockSplitter`, vector icons and colors. Use them to compose your own editor UI. Depends on Rendering.Skia and Docking; requires Uno Platform (Skia renderer).
+
+```sh
+dotnet add package CodeSpace.Controls.Uno
+```
+
+**Key types**
+
+- `CodeEditorControl` — hosts an `EditorSession`; exposes `Viewport`, `Renderer`, `ShowFind`, `FoldAll`, `FocusEditor`, `CommandRequested`.
+- `FileTreeControl` — explorer for a `Workspace`; `FileActivated` event.
+- `EditorTabs` — tab strip for a `TabGroup` with activate/close/move events.
+- `QuickPickControl` / `QuickPickItem` — command palette and quick-open list.
+- `ActivityBar`, `DockSplitter`, `VectorIcon`, `WorkbenchColors` — workbench chrome.
+
+**Usage**
+
+```csharp
+using CodeSpace.Controls.Uno;
+using CodeSpace.Core;
+using CodeSpace.Editor;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+
+var workspace = new Workspace();
+workspace.Add("src/hello.cs", "class Hello\n{\n}\n");
+var editor = new CodeEditorControl(new EditorSession(workspace.Files["src/hello.cs"]));
+editor.Viewport.ShowMinimap = false;
+
+var tree = new FileTreeControl { Workspace = workspace, Width = 240 };
+tree.FileActivated += (_, path) => Console.WriteLine("open " + path);
+
+var root = new Grid();
+root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+root.ColumnDefinitions.Add(new ColumnDefinition());
+root.Children.Add(tree);
+root.Children.Add(editor);
+Grid.SetColumn(editor, 1);
+
+var window = new Window { Title = "Editor", Content = root };
+window.Activate();
+editor.FocusEditor();
+```
+
+### CodeSpace.Workbench.Uno
+
+The complete VS Code-style workbench as a single `Grid`: activity bar, explorer, search, extensions view, editor groups, bottom panel, status bar, command palette, recovery and extension activation. Hosts supply storage, file pickers and the optional extension transport through `IWorkbenchPlatform`. Depends on Controls.Uno and Extensions; requires Uno Platform.
+
+```sh
+dotnet add package CodeSpace.Workbench.Uno
+```
+
+**Key types**
+
+- `WorkbenchView` — the workbench; `InitializeAsync`, `Open(path, line)`, `Execute(commandId)`, `Workspace`, `Docking`, `Commands`, `StatusChanged`.
+- `IWorkbenchPlatform` — file import/export, recovery storage and optional `IExtensionBridge`.
+- `ImportedFile` — a picked file's path and bytes.
+- `SampleWorkspace.Create` — the demo workspace shown on first start.
+
+**Usage**
+
+```csharp
+using CodeSpace.Extensions;
+using CodeSpace.Workbench.Uno;
+using Microsoft.UI.Xaml;
+
+sealed class MemoryPlatform : IWorkbenchPlatform
+{
+    private string? _recovery;
+    public bool IsBrowser => OperatingSystem.IsBrowser();
+    public Task<IReadOnlyList<ImportedFile>> PickFilesAsync(string extension = "*") => Task.FromResult<IReadOnlyList<ImportedFile>>([]);
+    public Task SaveFileAsync(string name, byte[] content) => Task.CompletedTask;   // show a save picker here
+    public Task<string?> LoadRecoveryAsync() => Task.FromResult(_recovery);
+    public Task SaveRecoveryAsync(string workspaceJson) { _recovery = workspaceJson; return Task.CompletedTask; }
+    public IExtensionBridge? ExtensionBridge => null;                              // no extension host
+}
+
+// In Application.OnLaunched:
+var window = new Window { Title = "CodeSpace" };
+var workbench = new WorkbenchView(new MemoryPlatform());
+window.Content = workbench;
+window.Activate();
+await workbench.InitializeAsync();
+workbench.Open("README.md");
+window.Closed += (_, _) => workbench.Dispose();
+```
 
 ## Build and run
 
