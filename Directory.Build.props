@@ -1,13 +1,26 @@
 <Project>
   <PropertyGroup>
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><LangVersion>latest</LangVersion>
-    <Version>0.1.0</Version><Authors>CodeSpace contributors</Authors>
+    <Version>0.1.0</Version>
+    <Authors>Wiesław Šoltés</Authors>
+    <Company>Wiesław Šoltés</Company>
+    <Copyright>Copyright © 2026 Wiesław Šoltés</Copyright>
     <RepositoryUrl>https://github.com/wieslawsoltes/CodeSpace</RepositoryUrl><RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression><PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageProjectUrl>https://wieslawsoltes.github.io/UnoSpace/projects/codespace/</PackageProjectUrl>
+    <PackageTags>codespace;code-editor;ide;workbench;text-editor;vscode-extensions;uno-platform;skiasharp</PackageTags>
     <Description>Reusable components for the CodeSpace cross-platform developer workbench.</Description>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <Deterministic>true</Deterministic><ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <DebugType>embedded</DebugType><NoWarn>$(NoWarn);CS1591</NoWarn>
+    <DebugType>portable</DebugType><NoWarn>$(NoWarn);CS1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
-  <ItemGroup><None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" /></ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)build/icon.png" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
 </Project>

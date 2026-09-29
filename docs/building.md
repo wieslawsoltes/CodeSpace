@@ -62,10 +62,10 @@ npm pack ./src/CodeSpace.ExtensionHost --pack-destination artifacts/packages
 python3 tools/verify-packages.py artifacts/packages
 ```
 
-Install wasm-tools before packing both Uno targets. Verification checks eight library IDs, assembly payloads including both Uno targets, README/license metadata, consistent versions, required npm modules and checksums. No public registry push is automatic.
+Install wasm-tools before packing both Uno targets. Verification checks eight library IDs, assembly payloads including both Uno targets, README/license metadata, consistent versions, required npm modules and checksums. Only version tags publish the NuGet packages (see below); the npm archive is never pushed to a registry.
 
 ## Workflows
 
 Build and test runs the portable suites and extension host, retains performance metrics and compiles desktop on Windows/macOS/Linux. Browser and Pages publishes WebAssembly, runs all portable/platform/process/Chromium gates, packages reusable libraries and deploys only successful main builds. It verifies the public page, worker and commit metadata over HTTPS. PRs do not deploy.
 
-Release runs on v* tags, validates suites, packs libraries and produces browser/framework-dependent desktop archives with checksums and a draft prerelease. The npm version is aligned with the tag. The workflow definition is not evidence of an executed release; signing, notarization and production distribution qualification are separate work. No credentials or signing secrets are embedded.
+Release runs on v* tags or a manually supplied version. It validates suites, packs libraries with symbols, and produces self-contained single-file desktop executables for Windows, macOS and Linux (x64 and arm64; `CodeSpace-<version>-<rid>.zip`/`.tar.gz`), browser/source archives and `SHA256SUMS.txt`. The npm version is aligned with the tag. Tags attach all assets to a GitHub Release (prerelease when the version has a suffix such as `-preview.1`) and then publish the NuGet packages to NuGet.org with [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing) (GitHub OIDC via `NuGet/login`, no stored API key) from the protected `nuget` environment; only the `NUGET_USER` variable is required. Manual runs are dry runs: they build and upload every asset as workflow artifacts but publish nothing. Signing, notarization and production distribution qualification are separate work. No credentials or signing secrets are embedded.

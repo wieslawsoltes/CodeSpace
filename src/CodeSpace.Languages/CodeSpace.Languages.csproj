@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Core/CodeSpace.Core.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>CodeSpace language services: incremental tokenizer and lexical services for syntax highlighting with no UI dependency.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Core/CodeSpace.Core.csproj" /></ItemGroup></Project>

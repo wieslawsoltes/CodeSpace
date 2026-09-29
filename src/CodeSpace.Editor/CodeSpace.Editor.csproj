@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Core/CodeSpace.Core.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>CodeSpace editor engine: transactions, multi-selections, undo/redo history and folding indexes with no UI dependency.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Core/CodeSpace.Core.csproj" /></ItemGroup></Project>

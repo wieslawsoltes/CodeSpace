@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Core/CodeSpace.Core.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>CodeSpace extension support: VSIX inspection, VS Code API compatibility reports and extension-host RPC framing.</Description></PropertyGroup><ItemGroup><ProjectReference Include="../CodeSpace.Core/CodeSpace.Core.csproj" /></ItemGroup></Project>

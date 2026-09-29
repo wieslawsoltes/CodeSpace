@@ -39,6 +39,20 @@ The renderer caches up to 512 line layouts with positioned-text batches. Line me
 
 Regression gates cover two-million-character documents, zero-allocation indexed navigation, cached layout reuse, raster equivalence and draw-call reduction. An initial same-process CPU/raster fixture measured approximately **9.74× less rendering time** and **74.3% fewer text calls**, with zero differing pixels. This is not a whole-IDE or physical-GPU speedup claim. See [methodology and original run](docs/performance.md); each CI run produces its own performance.json.
 
+## Download
+
+Every [release](https://github.com/wieslawsoltes/CodeSpace/releases/latest) ships a self-contained, single-file desktop app — no .NET install needed:
+
+| OS | x64 | Arm64 |
+| --- | --- | --- |
+| Windows | `CodeSpace-<version>-win-x64.zip` | `CodeSpace-<version>-win-arm64.zip` |
+| macOS | `CodeSpace-<version>-osx-x64.tar.gz` | `CodeSpace-<version>-osx-arm64.tar.gz` |
+| Linux | `CodeSpace-<version>-linux-x64.tar.gz` | `CodeSpace-<version>-linux-arm64.tar.gz` |
+
+Extract and run `CodeSpace` (`CodeSpace.exe` on Windows). Builds are not code-signed yet: on macOS clear the quarantine flag with `xattr -d com.apple.quarantine CodeSpace`; on Windows choose **More info → Run anyway** in SmartScreen. Verify downloads against `SHA256SUMS.txt`. Node.js is optional (for the local extension host) and not bundled.
+
+The .NET libraries below are published to [NuGet.org](https://www.nuget.org/packages?q=CodeSpace), e.g. `dotnet add package CodeSpace.Core`.
+
 ## Independently reusable packages
 
 | Package | Responsibility | UI dependency |
@@ -53,7 +67,7 @@ Regression gates cover two-million-character documents, zero-allocation indexed 
 | CodeSpace.Workbench.Uno | Composable workbench and platform adapter contract | Uno |
 | @codespace/extension-host | Browser/Node extension runtime and provider adapters | None |
 
-CI verifies the actual contents of eight NuGet packages and one npm archive, including both target assemblies in the Uno packages. Packages are downloadable artifacts, not automatically published to registries. Engines do not depend on the sample application.
+CI verifies the actual contents of eight NuGet packages and one npm archive, including both target assemblies in the Uno packages. Version tags publish the eight NuGet packages (with symbols) to NuGet.org; the npm extension host is attached to the GitHub Release as an archive and is not published to the npm registry. Engines do not depend on the sample application.
 
 ```csharp
 using CodeSpace.Core;
@@ -124,7 +138,7 @@ Unsupported API properties throw errors; partially implemented semantics are doc
 
 ## Contribution and distribution
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md). Build workflows validate libraries, desktop compilation, extension behavior and browser workflows. Tagged-release automation produces draft archives/checksums; it is not a claim of an executed, signed or production-qualified release.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [third-party notices](THIRD-PARTY-NOTICES.md). Build workflows validate libraries, desktop compilation, extension behavior and browser workflows. Tagged releases attach self-contained single-file desktop executables (Windows, macOS and Linux, x64 and arm64), browser/source archives, packages and checksums to a GitHub Release, and publish the NuGet packages with [Trusted Publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing); executables are unsigned and not production-qualified.
 
 CodeSpace is independent of Microsoft Visual Studio Code and GitHub Codespaces. Original simple vector icons are used; Microsoft logos, proprietary assets and Marketplace content are not bundled.
 
